@@ -13,4 +13,5 @@ database_id = "VUL_HIER_DATABASE_ID_IN"
 migrations_dir = "db"
 [vars]
 APP_NAME = "Richtpunt Bestelplatform"
+GITHUB_REPOSITORY = "arnenys89/richtpunt-bestelplatform"
 MICROSOFT_TENANT_ID = "common"
