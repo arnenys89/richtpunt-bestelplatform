@@ -1,4 +1,4 @@
-name = "richtpunt-bestelplatform"
+name = "richtpunt-bestelplatform-api"
 main = "worker/index.js"
 compatibility_date = "2026-11-16"
 workers_dev = true
