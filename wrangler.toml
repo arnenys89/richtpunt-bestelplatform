@@ -1,0 +1,16 @@
+name = "richtpunt-bestelplatform"
+main = "worker/index.js"
+compatibility_date = "2026-11-16"
+workers_dev = true
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+[[d1_databases]]
+binding = "DB"
+database_name = "richtpunt-bestelplatform"
+database_id = "VUL_HIER_DATABASE_ID_IN"
+migrations_dir = "db"
+[vars]
+APP_NAME = "Richtpunt Bestelplatform"
+MICROSOFT_TENANT_ID = "common"
