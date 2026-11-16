@@ -9,7 +9,7 @@ not_found_handling = "single-page-application"
 [[d1_databases]]
 binding = "DB"
 database_name = "richtpunt-bestelplatform"
-database_id = "VUL_HIER_DATABASE_ID_IN"
+database_id = "e75a0ded-3245-4465-b609-e44838262f60"
 migrations_dir = "db"
 [vars]
 APP_NAME = "Richtpunt Bestelplatform"
