@@ -34,7 +34,7 @@ function parseKboResults(xml){
  const description=xmlText(xmlBlocks(reply,"ReplyStatus")[0]||"","Description");
  const snapshotDate=xmlText(reply,"SnapshotDate");
  const results=xmlBlocks(xml,"Enterprise").map(block=>{
-  const number=xmlText(block,"Number");
+  const number=xmlText(block,"Number").replace(/\D/g,"").padStart(10,"0");
   const denominations=xmlBlocks(block,"Denomination").map(d=>({name:xmlText(d,"Value"),language:xmlText(d,"Language"),code:xmlText(d,"Code")})).filter(d=>d.name);
   const name=(denominations.find(d=>d.language==="nl"&&d.code==="001")||denominations.find(d=>d.language==="nl")||denominations[0]||{}).name||"";
   const address=xmlBlocks(block,"Address")[0]||"";
@@ -167,6 +167,7 @@ const requireRole=(user,...roles)=>{if(!roles.includes(user.role))throw Object.a
 const bodyJson=async req=>{try{return await req.json()}catch{throw Object.assign(new Error("Ongeldige JSON-inhoud."),{status:400})}};
 const clean=(v,max=500)=>String(v??"").trim().slice(0,max);
 function validEan13(value){const s=String(value??"").trim();if(!/^\d{13}$/.test(s))return false;let sum=0;for(let i=0;i<12;i++)sum+=Number(s[i])*(i%2===0?1:3);return (10-(sum%10))%10===Number(s[12])}
+function validEnterpriseNumber(value){const d=String(value??"").replace(/\D/g,"").padStart(10,"0");if(!/^\d{10}$/.test(d))return false;return 97-(Number(d.slice(0,8))%97)===Number(d.slice(8))}
 async function api(req,env,user,url){
  const path=url.pathname,method=req.method;
  if(path==="/api/me"&&method==="GET")return json({user});
@@ -310,13 +311,14 @@ async function api(req,env,user,url){
   const rows=await env.DB.prepare("SELECT id,enterprise_number,vat_number,name,street,house_number,box,zipcode,municipality,country,phone,email,website,image_url,source,kbo_snapshot_date FROM suppliers ORDER BY name").all();return json({suppliers:rows.results||[]});
  }
  if(path==="/api/suppliers"&&method==="POST"){
-  requireRole(user,"buyer","admin");const b=await bodyJson(req),name=clean(b.name,180),enterprise=clean(b.enterpriseNumber,20).replace(/[^0-9]/g,"");if(!name)return json({error:"Bedrijfsnaam ontbreekt."},400);
+  requireRole(user,"buyer","admin");const b=await bodyJson(req),name=clean(b.name,180),rawEnterprise=clean(b.enterpriseNumber,20).replace(/[^0-9]/g,""),enterprise=rawEnterprise?rawEnterprise.padStart(10,"0"):"";if(!name)return json({error:"Bedrijfsnaam ontbreekt."},400);
+  if(enterprise&&!validEnterpriseNumber(enterprise))return json({error:"Het ondernemingsnummer is ongeldig."},400);
   if(enterprise){const duplicate=await env.DB.prepare("SELECT id FROM suppliers WHERE enterprise_number=?").bind(enterprise).first();if(duplicate)return json({error:"Dit ondernemingsnummer bestaat al."},409)}
   const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO suppliers(id,enterprise_number,vat_number,name,street,house_number,box,zipcode,municipality,country,phone,email,website,source,kbo_snapshot_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,enterprise||null,clean(b.vatNumber,30)||null,name,clean(b.street,180)||null,clean(b.houseNumber,20)||null,clean(b.box,20)||null,clean(b.zipcode,20)||null,clean(b.municipality,100)||null,clean(b.country,60)||"België",clean(b.phone,50)||null,clean(b.email,180)||null,clean(b.website,250)||null,clean(b.source,30)||"manual",b.kboSnapshotDate||null).run();return json({id},201);
  }
  m=path.match(/^\/api\/suppliers\/([^/]+)$/);
  if(m&&method==="PATCH"){
-  requireRole(user,"buyer","admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE suppliers SET name=COALESCE(?,name),enterprise_number=COALESCE(?,enterprise_number),vat_number=COALESCE(?,vat_number),street=COALESCE(?,street),house_number=COALESCE(?,house_number),box=COALESCE(?,box),zipcode=COALESCE(?,zipcode),municipality=COALESCE(?,municipality),phone=COALESCE(?,phone),email=COALESCE(?,email),website=COALESCE(?,website) WHERE id=?").bind(b.name?clean(b.name,180):null,b.enterpriseNumber?clean(b.enterpriseNumber,20):null,b.vatNumber?clean(b.vatNumber,30):null,b.street?clean(b.street,180):null,b.houseNumber?clean(b.houseNumber,20):null,b.box?clean(b.box,20):null,b.zipcode?clean(b.zipcode,20):null,b.municipality?clean(b.municipality,100):null,b.phone?clean(b.phone,50):null,b.email?clean(b.email,180):null,b.website?clean(b.website,250):null,m[1]).run();return json({ok:true});
+  requireRole(user,"buyer","admin");const b=await bodyJson(req);const enterprise=Object.prototype.hasOwnProperty.call(b,"enterpriseNumber")?clean(b.enterpriseNumber,20).replace(/\D/g,"").padStart(10,"0"):null;if(enterprise&&!validEnterpriseNumber(enterprise))return json({error:"Het ondernemingsnummer is ongeldig."},400);if(enterprise){const duplicate=await env.DB.prepare("SELECT id FROM suppliers WHERE enterprise_number=? AND id<>?").bind(enterprise,m[1]).first();if(duplicate)return json({error:"Dit ondernemingsnummer bestaat al."},409)}await env.DB.prepare("UPDATE suppliers SET name=COALESCE(?,name),enterprise_number=COALESCE(?,enterprise_number),vat_number=COALESCE(?,vat_number),street=COALESCE(?,street),house_number=COALESCE(?,house_number),box=COALESCE(?,box),zipcode=COALESCE(?,zipcode),municipality=COALESCE(?,municipality),phone=COALESCE(?,phone),email=COALESCE(?,email),website=COALESCE(?,website) WHERE id=?").bind(b.name?clean(b.name,180):null,enterprise,b.vatNumber?clean(b.vatNumber,30):null,b.street?clean(b.street,180):null,b.houseNumber?clean(b.houseNumber,20):null,b.box?clean(b.box,20):null,b.zipcode?clean(b.zipcode,20):null,b.municipality?clean(b.municipality,100):null,b.phone?clean(b.phone,50):null,b.email?clean(b.email,180):null,b.website?clean(b.website,250):null,m[1]).run();return json({ok:true});
  }
  return json({error:"API-route niet gevonden."},404);
 }
