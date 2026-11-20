@@ -10,7 +10,7 @@ const esc = s => String(s).replace(/[<>&'"]/g, c => ({
   "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;"
 }[c]));
 const val = (x, t) => {
-  const m = x.match(new RegExp("<(?:[\\\\w]+:)?" + t + "[^>]*>([\\\\s\\\\S]*?)<\\\\/(?:[\\\\w]+:)?" + t + ">", "i"));
+  const m = String(x).match(new RegExp("<(?:[A-Za-z0-9_]+:)?" + t + "[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_]+:)?" + t + ">", "i"));
   return m ? m[1].replace(/<[^>]+>/g, "").trim() : "";
 };
 async function kbo(env, body) {
