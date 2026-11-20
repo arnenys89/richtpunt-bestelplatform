@@ -79,6 +79,15 @@ De bestaande instellingen uit jouw Cloudflare-dashboard zijn in `wrangler.toml` 
 
 De bestaande Access-app **Bestelplatform** beschermt `richtpunt-bestelplatform.pages.dev`. De huidige Allow-policy laat e-mailadressen met domein `ptiz.be` toe. De Worker en frontend moeten nog samen op deze hostnaam worden aangesloten en daarna getest.
 
+### KBO Public Search
+
+Stel de volgende Worker secrets in via Cloudflare:
+- `KBO_USERNAME`
+- `KBO_PASSWORD`
+- `KBO_ENDPOINT`: `https://kbopub.economie.fgov.be/kbopubws180000/services/wsKBOPub`
+
+De KBO-zoekfunctie ondersteunt bedrijfsnaam en ondernemingsnummer. De API verwerkt de SOAP-respons tot een controleerbare lijst met naam, ondernemingsnummer, status en beschikbare adres-/contactvelden. De gebruiker bevestigt zelf welke onderneming aan de leveranciersbibliotheek wordt toegevoegd. Een geldige KBO-account- en requestbalans zijn vereist.
+
 ### EAN-codes voor artikelen
 
 Elk artikel kan optioneel een EAN-13-code krijgen. De artikelfiche controleert het formaat en het controlecijfer. De API weigert ongeldige EAN-codes en dubbele codes. De artikellijst en artikelzoekfunctie ondersteunen zoeken op EAN-code; bestelregels tonen de gekoppelde EAN-code.
