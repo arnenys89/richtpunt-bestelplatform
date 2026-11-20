@@ -162,10 +162,17 @@ async function authenticate(req,env){
   if(!staffDomains.has(domain))return null;
   return local.replace(/\./g,"")+"@richtpunt-staff";
  };
- let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(identity).first();
+ const normalized=normalizeStaffEmail(email);
+ // Resolve the protected administrator by verified school email before looking
+ // up a previously linked Cloudflare subject. This prevents an older subject
+ // mapping from selecting a different staff profile for the superadmin.
+ let user=null;
+ if(normalized&&normalized===normalizeStaffEmail(protectedEmail)){
+  user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE lower(email)=lower(?)").bind(protectedEmail).first();
+ }
+ if(!user)user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(identity).first();
  if(!user){
   let byEmail=null;
-  const normalized=normalizeStaffEmail(email);
   if(normalized){
    const allUsers=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users").all();
    const matches=(allUsers.results||[]).filter(candidate=>normalizeStaffEmail(candidate.email)===normalized);
