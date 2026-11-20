@@ -21,11 +21,9 @@ npm run dev
 npm run build
 ```
 
-## Huidige functionele status en belangrijke beperking
+## Huidige functionele status
 
-De huidige frontend bewaart gegevens in de lokale browseropslag (`localStorage`). Daardoor blijven demo-bestellingen na herladen op hetzelfde toestel en in dezelfde browser beschikbaar. De gegevens worden **niet** gedeeld met andere gebruikers, browsers of toestellen. De gebruikers- en rollenlijst in Instellingen is uitsluitend demonstratief en verleent geen echte toegangsrechten.
-
-De Worker bevat nog geen productieklare D1 CRUD-endpoints of Microsoft Entra ID-tokenvalidatie. De bestaande `/api/*`-fallback geeft voor niet-geïmplementeerde endpoints HTTP 501 terug. De website mag daarom nog niet gebruikt worden voor echte bestellingen of persoonsgegevens en de lokale demo mag niet als beveiligd gebruikersbeheer worden beschouwd.
+De frontend haalt de identiteit, bestellingen en artikellijst op via de Cloudflare Access-beveiligde API. Nieuwe bestellingen en aankopen worden centraal in Cloudflare D1 bewaard. De lokale browseropslag wordt alleen nog gebruikt wanneer de API-identiteit niet beschikbaar is; die lokale demonstratiegegevens worden niet automatisch met D1 samengevoegd. Instellingen en volledig artikelbeheer zijn nog niet volledig aangesloten op D1.
 
 ## D1-databank
 
@@ -40,12 +38,12 @@ De oudere afbeeldingsmigratie staat in `db/z_image_assets.sql` en moet alleen wo
 
 ## Nog vereist voor productie
 
-1. Microsoft Entra ID-aanmelding configureren en access tokens server-side valideren.
-2. Autorisatie afdwingen op de server: aanvrager, aankoper en beheerder, met campus- en categoriegebonden rechten.
-3. D1 CRUD-endpoints bouwen voor bestellingen, orderregels, leveranciers, aankopen, gebruikers en instellingen.
-4. De frontend koppelen aan die API in plaats van browseropslag; foutafhandeling, laadstatussen en gelijktijdige wijzigingen toevoegen.
-5. Migraties uitvoeren op de juiste D1-database.
-6. KBO Public Search SOAP-response correct parsen en valideren; de huidige KBO-route is nog niet volledig.
+1. Cloudflare Access-teamdomein, Access AUD en publieke origin instellen als Worker-variabelen.
+2. De Access-app en policy instellen zodat alleen de juiste schoolgebruikers toegang krijgen.
+3. De D1-migraties uitvoeren en de eerste beheerderrol toekennen.
+4. Campus- en categoriegebonden autorisatie afdwingen via `buyer_assignments`.
+5. Instellingen en artikelbeheer volledig aan de API koppelen.
+6. KBO Public Search SOAP-response correct parsen en valideren.
 7. Geautomatiseerde tests, beveiligingscontrole en acceptatietest uitvoeren vóór publicatie.
 
 ## Bestaande afbeeldingsopslag
@@ -67,7 +65,7 @@ De Worker gebruikt Cloudflare Access als identiteitsprovider. Microsoft Entra ID
 
 ### Cloudflare-configuratie
 
-Vul in `wrangler.toml` de volgende variabelen in met de waarden uit Cloudflare Zero Trust:
+Configureer in Cloudflare Workers (Settings → Variables and Secrets) de volgende variabelen met de waarden uit Cloudflare Zero Trust. Je kunt ze ook toevoegen aan een lokale, niet-gecommitte `wrangler`-omgeving:
 
 - `CF_ACCESS_TEAM_DOMAIN`: teamdomein, bijvoorbeeld `voorbeeld.cloudflareaccess.com` (zonder https://).
 - `CF_ACCESS_AUD`: de Application Audience (AUD) Tag van de Access-app die deze website beschermt.
