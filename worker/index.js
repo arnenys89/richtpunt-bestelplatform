@@ -146,7 +146,7 @@ async function authenticate(req,env){
 const requireRole=(user,...roles)=>{if(!roles.includes(user.role))throw Object.assign(new Error("Je hebt onvoldoende rechten voor deze actie."),{status:403})};
 const bodyJson=async req=>{try{return await req.json()}catch{throw Object.assign(new Error("Ongeldige JSON-inhoud."),{status:400})}};
 const clean=(v,max=500)=>String(v??"").trim().slice(0,max);
-function validEan13(value){const s=String(value??"").trim();if(!/^\\d{13}$/.test(s))return false;let sum=0;for(let i=0;i<12;i++)sum+=Number(s[i])*(i%2===0?1:3);return (10-(sum%10))%10===Number(s[12])}
+function validEan13(value){const s=String(value??"").trim();if(!/^\d{13}$/.test(s))return false;let sum=0;for(let i=0;i<12;i++)sum+=Number(s[i])*(i%2===0?1:3);return (10-(sum%10))%10===Number(s[12])}
 async function api(req,env,user,url){
  const path=url.pathname,method=req.method;
  if(path==="/api/me"&&method==="GET")return json({user});
