@@ -162,7 +162,7 @@ async function api(req,env,user,url){
   const rows=user.role==="admin"||user.role==="buyer"
    ?await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id ORDER BY o.created_at DESC").all()
    :await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id WHERE o.requester_id=? ORDER BY o.created_at DESC").bind(user.id).all();
-  const orders=await Promise.all((rows.results||[]).map(async o=>{const items=await env.DB.prepare("SELECT id,catalog_item_id,item_name,quantity,unit,status,buyer_note FROM order_items WHERE order_id=? ORDER BY created_at").bind(o.id).all();return{...o,items:items.results||[]}}));
+  const orders=await Promise.all((rows.results||[]).map(async o=>{const items=await env.DB.prepare("SELECT oi.id,oi.catalog_item_id,oi.item_name,oi.quantity,oi.unit,oi.status,oi.buyer_note,ci.dan_code FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? ORDER BY oi.created_at").bind(o.id).all();return{...o,items:items.results||[]}}));
   return json({orders});
  }
  if(path==="/api/orders"&&method==="POST"){
