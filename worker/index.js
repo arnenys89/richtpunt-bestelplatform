@@ -81,10 +81,10 @@ async function importImage(req, env) {
     try {
       const u = new URL(candidate);
       const host = u.hostname.toLowerCase();
-      if (!["http:","https:"].includes(u.protocol) || host==="localhost" || host==="127.0.0.1" || host==="::1" || /^10\\./.test(host) || /^192\\.168\\./.test(host) || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host)) continue;
+      if (!["http:","https:"].includes(u.protocol) || host==="localhost" || host==="127.0.0.1" || host==="::1" || host.startsWith("10.") || host.startsWith("192.168.") || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)) continue;
       const r = await fetch(u.toString(), { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" }, redirect: "follow" });
       const finalUrl = new URL(r.url), finalHost=finalUrl.hostname.toLowerCase();
-      if (!["http:","https:"].includes(finalUrl.protocol) || finalHost==="localhost" || finalHost==="127.0.0.1" || finalHost==="::1" || finalHost.startsWith("10.") || finalHost.startsWith("192.168.") || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(finalHost)) continue;
+      if (!["http:","https:"].includes(finalUrl.protocol) || finalHost==="localhost" || finalHost==="127.0.0.1" || finalHost==="::1" || finalHost.startsWith("10.") || finalHost.startsWith("192.168.") || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(finalHost)) continue;
       const type = (r.headers.get("content-type") || "").split(";")[0].toLowerCase();
       const length = Number(r.headers.get("content-length") || 0);
       if (!r.ok || !type.startsWith("image/") || type==="image/svg+xml" || length>4*1024*1024) continue;
