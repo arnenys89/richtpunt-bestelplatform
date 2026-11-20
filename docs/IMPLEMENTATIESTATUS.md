@@ -30,7 +30,7 @@ Laatste controle: 20 november 2026. De code staat op `main`. De productieomgevin
 - Productie-URL: https://richtpunt-bestelplatform.pages.dev
 - Pages build en Functions-bundeling: geslaagd.
 - GitHub Actions-build: geslaagd.
-- Pages Function-route `functions/api/[[path]].js` roept de gedeelde API-handler in `worker/index.js) aan.
+- Pages Function-route `functions/api/[[path]].js` roept de gedeelde API-handler in `worker/index.js` aan.
 - Pages production bindings: D1 `DB` en R2 `IMAGES` zijn aanwezig.
 - R2-bucket `richtpunt-bestelplatform-images` is aangemaakt in regio WEUR (West-Europa), Standard.
 - De Worker-/Pages-variabelen voor Cloudflare Access en de KBO-endpoint zijn ingesteld.
