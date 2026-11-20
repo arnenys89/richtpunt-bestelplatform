@@ -25,26 +25,30 @@ npm run build
 
 De frontend haalt de identiteit, bestellingen en artikellijst op via de Cloudflare Access-beveiligde API. Nieuwe bestellingen en aankopen worden centraal in Cloudflare D1 bewaard. De lokale browseropslag wordt alleen nog gebruikt wanneer de API-identiteit niet beschikbaar is; die lokale demonstratiegegevens worden niet automatisch met D1 samengevoegd. Instellingen en volledig artikelbeheer zijn nog niet volledig aangesloten op D1.
 
-## D1-databank
+## D1-databank en migraties
 
-De bestaande basisschema's staan in `db/schema.sql`. Het aankoopregister staat in `db/0002_purchase_register.sql`. Voer de migratie pas uit nadat de basisschema's op de D1-database zijn toegepast:
+De initiële databank wordt één keer aangemaakt met het basisschema en het aankoopregister:
 
 ```bash
 npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/schema.sql
 npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/0002_purchase_register.sql
 ```
 
-De oudere afbeeldingsmigratie staat in `db/z_image_assets.sql` en moet alleen worden uitgevoerd wanneer de afbeeldingsfunctionaliteit wordt gebruikt en de kolommen nog niet bestaan.
+Daarna gebruikt Wrangler uitsluitend de geordende migraties in `db/migrations/`:
 
-## Nog vereist voor productie
+1. `001_catalog_ean_code.sql`
+2. `002_order_item_justification.sql`
+3. `003_order_remarks.sql`
+4. `004_teams_suppliers_images.sql`
 
-1. Cloudflare Access-teamdomein, Access AUD en publieke origin instellen als Worker-variabelen.
-2. De Access-app en policy instellen zodat alleen de juiste schoolgebruikers toegang krijgen.
-3. De D1-migraties uitvoeren en de eerste beheerderrol toekennen.
-4. Campus- en categoriegebonden autorisatie afdwingen via `buyer_assignments`.
-5. Instellingen en artikelbeheer volledig aan de API koppelen.
-6. KBO Public Search SOAP-response correct parsen en valideren.
-7. Geautomatiseerde tests, beveiligingscontrole en acceptatietest uitvoeren vóór publicatie.
+Controleer vóór uitvoering altijd eerst de migratiestatus:
+
+```bash
+npx wrangler d1 migrations list richtpunt-bestelplatform --remote
+npx wrangler d1 migrations apply richtpunt-bestelplatform --remote
+```
+
+Voer het basisschema en het aankoopregister niet opnieuw uit op een bestaande database. De oudere rootbestanden `db/0003_catalog_dan_code.sql`, `db/0004_catalog_ean_code.sql` en `db/z_image_assets.sql` zijn historische migratiebestanden en horen niet bij de actuele Wrangler-migratiemap. Voer die niet afzonderlijk uit.
 
 ## Bestaande afbeeldingsopslag
 
