@@ -146,23 +146,25 @@ async function authenticate(req,env){
 const requireRole=(user,...roles)=>{if(!roles.includes(user.role))throw Object.assign(new Error("Je hebt onvoldoende rechten voor deze actie."),{status:403})};
 const bodyJson=async req=>{try{return await req.json()}catch{throw Object.assign(new Error("Ongeldige JSON-inhoud."),{status:400})}};
 const clean=(v,max=500)=>String(v??"").trim().slice(0,max);
+function validEan13(value){const s=String(value??"").trim();if(!/^\\d{13}$/.test(s))return false;let sum=0;for(let i=0;i<12;i++)sum+=Number(s[i])*(i%2===0?1:3);return (10-(sum%10))%10===Number(s[12])}
 async function api(req,env,user,url){
  const path=url.pathname,method=req.method;
  if(path==="/api/me"&&method==="GET")return json({user});
  if(path==="/api/catalog"&&method==="GET"){
-  const rows=await env.DB.prepare("SELECT id,name,dan_code,category,description,unit,active FROM catalog_items WHERE active=1 ORDER BY category,name").all();return json({items:rows.results||[]});
+  const rows=await env.DB.prepare("SELECT id,name,ean_code,category,description,unit,active FROM catalog_items WHERE active=1 ORDER BY category,name").all();return json({items:rows.results||[]});
  }
  if(path==="/api/catalog"&&method==="POST"){
   requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!clean(b.name,180))return json({error:"Artikelnaam ontbreekt."},400);
-  const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO catalog_items (id,name,dan_code,category,description,unit,active,created_by) VALUES (?,?,?,?,?,?,1,?)").bind(id,clean(b.name,180),clean(b.danCode,100)||null,clean(b.category,100),clean(b.description,1000),clean(b.unit,40)||"stuk",user.id).run();return json({id},201);
+  const ean=clean(b.eanCode,13);if(ean&&!validEan13(ean))return json({error:"Vul een geldige EAN-13-code van 13 cijfers in."},400);
+  const id=crypto.randomUUID();try{await env.DB.prepare("INSERT INTO catalog_items (id,name,ean_code,category,description,unit,active,created_by) VALUES (?,?,?,?,?,?,1,?)").bind(id,clean(b.name,180),ean||null,clean(b.category,100),clean(b.description,1000),clean(b.unit,40)||"stuk",user.id).run()}catch(e){if(/unique/i.test(e.message))return json({error:"Deze EAN-code is al aan een ander artikel gekoppeld."},409);throw e}return json({id},201);
  }
- let m=path.match(/^\/api\/catalog\/([^/]+)$/);
- if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE catalog_items SET name=COALESCE(?,name),dan_code=COALESCE(?,dan_code),category=COALESCE(?,category),unit=COALESCE(?,unit),active=COALESCE(?,active) WHERE id=?").bind(b.name?clean(b.name,180):null,Object.prototype.hasOwnProperty.call(b,"danCode")?clean(b.danCode,100):null,b.category?clean(b.category,100):null,b.unit?clean(b.unit,40):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true})}
+ let m=path.match(/^\\/api\\/catalog\\/([^/]+)$/);
+ if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);const hasEan=Object.prototype.hasOwnProperty.call(b,"eanCode"),ean=clean(b.eanCode,13);if(hasEan&&ean&&!validEan13(ean))return json({error:"Vul een geldige EAN-13-code van 13 cijfers in."},400);try{await env.DB.prepare("UPDATE catalog_items SET name=COALESCE(?,name),ean_code=CASE WHEN ?=1 THEN ? ELSE ean_code END,category=COALESCE(?,category),unit=COALESCE(?,unit),active=COALESCE(?,active) WHERE id=?").bind(b.name?clean(b.name,180):null,hasEan?1:0,ean||null,b.category?clean(b.category,100):null,b.unit?clean(b.unit,40):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run()}catch(e){if(/unique/i.test(e.message))return json({error:"Deze EAN-code is al aan een ander artikel gekoppeld."},409);throw e}return json({ok:true})}
  if(path==="/api/orders"&&method==="GET"){
   const rows=user.role==="admin"||user.role==="buyer"
    ?await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id ORDER BY o.created_at DESC").all()
    :await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id WHERE o.requester_id=? ORDER BY o.created_at DESC").bind(user.id).all();
-  const orders=await Promise.all((rows.results||[]).map(async o=>{const items=await env.DB.prepare("SELECT oi.id,oi.catalog_item_id,oi.item_name,oi.quantity,oi.unit,oi.status,oi.buyer_note,ci.dan_code FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? ORDER BY oi.created_at").bind(o.id).all();return{...o,items:items.results||[]}}));
+  const orders=await Promise.all((rows.results||[]).map(async o=>{const items=await env.DB.prepare("SELECT oi.id,oi.catalog_item_id,oi.item_name,oi.quantity,oi.unit,oi.status,oi.buyer_note,ci.ean_code FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? ORDER BY oi.created_at").bind(o.id).all();return{...o,items:items.results||[]}}));
   return json({orders});
  }
  if(path==="/api/orders"&&method==="POST"){
