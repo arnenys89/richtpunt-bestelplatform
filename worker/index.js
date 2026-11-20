@@ -26,6 +26,26 @@ async function kbo(env, body) {
   if (!r.ok || txt.includes(":Fault")) throw Error(val(txt, "faultstring") || "KBO HTTP " + r.status);
   return txt;
 }
+function xmlBlocks(xml,tag){const re=new RegExp("<(?:[A-Za-z0-9_]+:)?"+tag+"(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:[A-Za-z0-9_]+:)?"+tag+">","gi");return [...String(xml).matchAll(re)].map(m=>m[1])}
+function xmlText(xml,tag){return val(xml,tag).replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&apos;/g,"'")}
+function parseKboResults(xml){
+ const reply=xmlBlocks(xml,"ReplyContext")[0]||"";
+ const code=xmlText(xmlBlocks(reply,"ReplyStatus")[0]||"","Code");
+ const description=xmlText(xmlBlocks(reply,"ReplyStatus")[0]||"","Description");
+ const snapshotDate=xmlText(reply,"SnapshotDate");
+ const results=xmlBlocks(xml,"Enterprise").map(block=>{
+  const number=xmlText(block,"Number");
+  const denominations=xmlBlocks(block,"Denomination").map(d=>({name:xmlText(d,"Value"),language:xmlText(d,"Language"),code:xmlText(d,"Code")})).filter(d=>d.name);
+  const name=(denominations.find(d=>d.language==="nl"&&d.code==="001")||denominations.find(d=>d.language==="nl")||denominations[0]||{}).name||"";
+  const address=xmlBlocks(block,"Address")[0]||"";
+  const street=xmlText(xmlBlocks(address,"Street")[0]||"","Value");
+  const municipality=xmlText(xmlBlocks(address,"Municipality")[0]||"","Value");
+  const statusBlock=xmlBlocks(block,"JuridicalSituation")[0]||"";
+  const status=xmlBlocks(statusBlock,"Status")[0]||"";
+  return {enterpriseNumber:number.replace(/\D/g,""),name,statusCode:xmlText(status,"Code"),status:xmlText(status,"Value"),street,houseNumber:xmlText(address,"HouseNumber"),box:xmlText(address,"Box"),zipcode:xmlText(address,"Zipcode"),municipality,country:xmlText(xmlBlocks(address,"Country")[0]||"","Value"),phone:xmlText(address,"TelephoneNumber"),email:xmlText(address,"Email"),website:xmlText(address,"Website"),snapshotDate};
+ }).filter(x=>x.enterpriseNumber&&x.name);
+ return {results,replyCode:code,replyDescription:description,snapshotDate};
+}
 function imageCandidates(html) {
   const found = [];
   for (const m of html.matchAll(/imgurl=([^&"\\\s]+)/g)) {
@@ -305,7 +325,7 @@ export default {
   if(req.method==="OPTIONS")return new Response(null,{headers});
   if(u.pathname==="/api/health")return json({ok:true,app:env.APP_NAME||"Richtpunt Bestelplatform",cloudflareAccessConfigured:!!(env.CF_ACCESS_TEAM_DOMAIN&&env.CF_ACCESS_AUD),databaseConfigured:!!env.DB,kboConfigured:!!(env.KBO_USERNAME&&env.KBO_PASSWORD&&env.KBO_ENDPOINT)});
   if(u.pathname==="/api/images/import"&&req.method==="POST"){try{return await importImage(req,env)}catch(e){return json({error:e.message||"Afbeeldingsimport mislukt."},500)}}
-  if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);const kboUser=await authenticate(req,env);requireRole(kboUser,"buyer","admin");const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json({rawResponse:xml,notice:"KBO SOAP-resultaat; bedrijfsgegevens moeten nog verder worden uitgelezen."})}catch(e){return json({error:e.message},503)}}
+  if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);const kboUser=await authenticate(req,env);requireRole(kboUser,"buyer","admin");const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json(parseKboResults(xml))}catch(e){return json({error:e.message},503)}}
   if(u.pathname.startsWith("/api/")){if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);try{const user=await authenticate(req,env);const response=await api(req,env,user,u);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}catch(e){const response=json({error:e.message||"Interne API-fout."},e.status||500);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}}
   return env.ASSETS?env.ASSETS.fetch(req):json({error:"Frontend niet gebouwd."},404);
  }
