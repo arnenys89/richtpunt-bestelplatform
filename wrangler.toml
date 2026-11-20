@@ -17,3 +17,7 @@ GITHUB_REPOSITORY = "arnenys89/richtpunt-bestelplatform"
 CF_ACCESS_TEAM_DOMAIN = "sapoov.cloudflareaccess.com"
 CF_ACCESS_AUD = "c76aa7483c5c89e436cb4ddf2ad0d545f79e612d9701ed357aa8921ab77dea73"
 APP_ORIGIN = "https://richtpunt-bestelplatform.pages.dev"
+
+[[r2_buckets]]
+binding = "IMAGES"
+bucket_name = "richtpunt-bestelplatform-images"
