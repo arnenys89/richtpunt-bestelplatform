@@ -160,7 +160,7 @@ async function authenticate(req,env){
   if(at<1)return null;
   const local=address.slice(0,at),domain=address.slice(at+1);
   if(!staffDomains.has(domain))return null;
-  return local.replace(/\\./g,"")+"@richtpunt-staff";
+  return local.replace(/\./g,"")+"@richtpunt-staff";
  };
  let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(identity).first();
  if(!user){
