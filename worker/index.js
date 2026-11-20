@@ -199,17 +199,17 @@ async function api(req,env,user,url){
   if(user.role==="staff"){const member=await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(b.teamId,user.id).first();if(!member)return json({error:"Je bent geen lid van het geselecteerde team."},403)}
   if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?)").bind(user.id,b.campus,b.teamId).first())requireRole(user,"admin");
   if(items.some(i=>!clean(i.justification,2000)))return json({error:"Geef voor ieder artikel een verantwoording in."},400);
-  const orderId=crypto.randomUUID(),statements=[env.DB.prepare("INSERT INTO orders (id,requester_id,title,campus,motivation,status,team_id,remarks) VALUES (?,?,?,?,?,'submitted',?,?)").bind(orderId,user.id,title,b.campus,clean(b.motivation,3000),b.teamId,clean(b.remarks,3000))];
+  const orderId=crypto.randomUUID(),createdItems=[],statements=[env.DB.prepare("INSERT INTO orders (id,requester_id,title,campus,motivation,status,team_id,remarks) VALUES (?,?,?,?,?,'submitted',?,?)").bind(orderId,user.id,title,b.campus,clean(b.motivation,3000),b.teamId,clean(b.remarks,3000))];
   for(const item of items){
    if(!clean(item.name,180)||!Number.isFinite(Number(item.quantity))||Number(item.quantity)<=0)return json({error:"Elke bestelregel moet een naam en positief aantal bevatten."},400);
    if(item.catalogItemId){const catalogItem=await env.DB.prepare("SELECT id,active,category FROM catalog_items WHERE id=?").bind(item.catalogItemId).first();if(!catalogItem||!catalogItem.active)return json({error:"Een geselecteerd artikel is niet meer beschikbaar."},409);if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR category=?)").bind(user.id,b.campus,b.teamId,catalogItem.category).first())requireRole(user,"admin")}else if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?) AND category IS NULL").bind(user.id,b.campus,b.teamId).first())requireRole(user,"admin");
-   const itemId=crypto.randomUUID();
+   const itemId=crypto.randomUUID();createdItems.push({id:itemId});
    statements.push(env.DB.prepare("INSERT INTO order_items (id,order_id,catalog_item_id,item_name,quantity,unit,status,justification) VALUES (?,?,?,?,?,?,'pending',?)").bind(itemId,orderId,item.catalogItemId||null,clean(item.name,180),Number(item.quantity),clean(item.unit,40)||"stuk",clean(item.justification,2000)));
    const proposals=Array.isArray(item.suppliers)?[...new Set(item.suppliers.map(x=>clean(x,180)).filter(Boolean))].slice(0,3):[];
    for(let n=0;n<proposals.length;n++){const name=clean(proposals[n],180);if(!name)continue;const sid=crypto.randomUUID();statements.push(env.DB.prepare("INSERT INTO suppliers (id,name,source) SELECT ?,?,'manual' WHERE NOT EXISTS (SELECT 1 FROM suppliers WHERE lower(name)=lower(?))").bind(sid,name,name));statements.push(env.DB.prepare("INSERT INTO supplier_proposals (id,order_item_id,supplier_id,rank) SELECT ?,?,id,? FROM suppliers WHERE lower(name)=lower(?) LIMIT 1").bind(crypto.randomUUID(),itemId,n+1,name))}
   }
   statements.push(env.DB.prepare("INSERT INTO order_events (id,order_id,actor_id,event_type,message) VALUES (?,?,?,'submitted',?)").bind(crypto.randomUUID(),orderId,user.id,"Bestelling ingediend"));
-  await env.DB.batch(statements);return json({id:orderId},201);
+  await env.DB.batch(statements);return json({id:orderId,items:createdItems},201);
  }
  m=path.match(/^\/api\/orders\/([^/]+)$/);
  if(m&&method==="PATCH"){
