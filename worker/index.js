@@ -255,7 +255,6 @@ async function api(req,env,user,url){
   requireRole(user,"admin");const b=await bodyJson(req),name=clean(b.name,120),campus=clean(b.campus,40);
   if(!name||!["Ninove","Zottegem","Beide campussen"].includes(campus))return json({error:"Vul een teamnaam en geldige campus in."},400);
   const id=crypto.randomUUID();try{await env.DB.prepare("INSERT INTO teams(id,name,campus,description) VALUES(?,?,?,?)").bind(id,name,campus,clean(b.description,1000)).run()}catch(e){if(/unique/i.test(e.message))return json({error:"Deze teamnaam bestaat al."},409);throw e}
-  await env.DB.prepare("INSERT INTO order_events(id,order_id,actor_id,event_type,message) SELECT ?,o.id,?,'team_created',? FROM orders o WHERE 1=0").bind(crypto.randomUUID(),user.id,"Team aangemaakt").run();
   return json({id},201);
  }
  m=path.match(/^\/api\/teams\/([^/]+)$/);
