@@ -141,4 +141,4 @@ Voer geen echte productiegegevens in en publiceer niet voordat migraties, R2, Cl
 
 ## Functionele uitwerking
 
-De volledige functionele blauwdruk en acceptatiecriteria staan in [docs/FUNCTIONELE-BLAUWDRUK.md](docs/FUNCTIONELE-BLAUWDRUK.md). De huidige implementatie is een ontwikkelversie. Niet alle acceptatietests zijn uitgevoerd; voer geen productiegegevens in en publiceer niet voordat de D1-migraties, R2-bucket, rechtenmatrix en end-to-endtests zijn gecontroleerd.
+De volledige functionele blauwdruk en acceptatiecriteria staan in [docs/FUNCTIONELE-BLAUWDRUK.md](docs/FUNCTIONELE-BLAUWDRUK.md). De gecontroleerde code-/productiestatus en resterende blokkeringen staan in [docs/IMPLEMENTATIESTATUS.md](docs/IMPLEMENTATIESTATUS.md). De huidige implementatie is een ontwikkelversie. Niet alle acceptatietests zijn uitgevoerd; voer geen productiegegevens in en publiceer niet voordat de D1-migraties, R2-bucket, rechtenmatrix en end-to-endtests zijn gecontroleerd.
