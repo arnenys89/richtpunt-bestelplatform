@@ -150,7 +150,7 @@ async function api(req,env,user,url){
  const path=url.pathname,method=req.method;
  if(path==="/api/me"&&method==="GET")return json({user});
  if(path==="/api/catalog"&&method==="GET"){
-  const rows=await env.DB.prepare("SELECT id,name,category,description,unit,active,image_url FROM catalog_items WHERE active=1 ORDER BY category,name").all();return json({items:rows.results||[]});
+  const rows=await env.DB.prepare("SELECT id,name,category,description,unit,active FROM catalog_items WHERE active=1 ORDER BY category,name").all();return json({items:rows.results||[]});
  }
  if(path==="/api/catalog"&&method==="POST"){
   requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!clean(b.name,180))return json({error:"Artikelnaam ontbreekt."},400);
