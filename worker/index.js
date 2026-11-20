@@ -115,7 +115,7 @@ async function authenticate(req,env){
  if(!token)throw Object.assign(new Error("Geen Cloudflare Access-identiteit gevonden. Meld je aan via de beveiligde website."),{status:401});
  const parts=token.split(".");if(parts.length!==3)throw Object.assign(new Error("Ongeldig Cloudflare Access-token."),{status:401});
  let head,claims;try{head=decodePart(parts[0]);claims=decodePart(parts[1])}catch{throw Object.assign(new Error("Ongeldig Cloudflare Access-token."),{status:401})}
- const team=(env.CF_ACCESS_TEAM_DOMAIN||"").replace(/^https?:\\/\\//,"").replace(/\\/$/,"");
+ const team=(env.CF_ACCESS_TEAM_DOMAIN||"").replace(/^https?:\/\//,"").replace(/\/$/,"");
  const expectedAud=env.CF_ACCESS_AUD;
  if(!team||!expectedAud)throw Object.assign(new Error("Cloudflare Access is nog niet geconfigureerd. Stel CF_ACCESS_TEAM_DOMAIN en CF_ACCESS_AUD in als Worker-variabelen."),{status:503});
  const issuer="https://"+team;
