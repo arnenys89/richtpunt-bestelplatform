@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import{createRoot}from'react-dom/client';
-import{ShoppingCart,ClipboardList,Package,Users,Settings,Plus,Search,Building2,CheckCircle2,Clock3,Trash2,Save,Filter,RotateCcw,Truck,ChevronRight,FileText,ClipboardCheck,MessageCircleQuestion,MessageCircle,CheckCircle2,XCircle,ShoppingBag,PackageCheck,Ban}from'lucide-react';
+import{ShoppingCart,ClipboardList,Package,Users,Settings,Plus,Search,Building2,CheckCircle2,Clock3,Trash2,Save,Filter,RotateCcw,Truck,ChevronRight,FileText,MessageCircleQuestion,MessageCircle,XCircle,ShoppingBag,PackageCheck,Ban}from'lucide-react';
 import'./style.css';
 
 const seedCatalog=[
