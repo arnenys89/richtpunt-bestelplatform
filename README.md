@@ -114,9 +114,19 @@ De eerste gebruiker wordt automatisch als aanvrager aangemaakt. Ken de eerste be
 UPDATE users SET role='admin', campus='Beide campussen' WHERE lower(email)=lower('beheerder@school.be');
 ```
 
-### Huidige grenzen
+### Huidige grenzen en resterende validatie
 
-De frontend haalt bij het laden de identiteit, bestellingen en artikellijst via de API op. Nieuwe bestellingen en aankopen worden via D1 opgeslagen. Niet alle bestaande instellingen- en artikelbeheerschermen zijn al volledig gekoppeld aan de API. Fijnmazige campus-/categorie-autorisatie via `buyer_assignments`, KBO-responsparsing, integratietests en volledige end-to-endtests moeten nog worden afgewerkt. Voer geen echte productiegegevens in vooraleer die controles zijn uitgevoerd.
+De code bevat nu centrale instellingen, teambeheer, teamlid/coördinatorbeheer, aankopers-toewijzingen, artikel- en leveranciersfiches, EAN-13, leverancierskoppelingen, KBO-zoekresultaatparsing, informatieverzoeken en een chronologisch bestel-logboek.
+
+De volgende zaken zijn nog niet bewezen of volledig afgewerkt:
+- De R2-bucket moet in Cloudflare worden aangemaakt en de binding moet bij deployment worden gevalideerd.
+- KBO-verbinding moet met de echte accountgegevens en het productie-endpoint worden getest; zoekresultaten moeten door een gebruiker worden gecontroleerd.
+- De volledige autorisatiematrix (met name gecombineerde categorieën op één bestelling) vraagt nog een security review.
+- Deelleveringen kunnen als aparte aankooprecords worden opgevolgd, maar er is nog geen afzonderlijke hoeveelheid-per-deelleveringregistratie.
+- De afbeeldingsimport selecteert een kandidaat uit zoekresultaten; controleer altijd bron en gebruiksrechten.
+- Er is nog geen geslaagde build-, integratie- of end-to-endtest aangetoond.
+
+Voer geen echte productiegegevens in en publiceer niet voordat migraties, R2, Cloudflare Access, rechtenmatrix en acceptatietests zijn gecontroleerd.
 
 
 ## Functionele uitwerking
