@@ -40,3 +40,12 @@ CREATE TABLE IF NOT EXISTS image_assets (
 );
 CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_supplier_proposals_item ON supplier_proposals(order_item_id,rank);
+
+CREATE TABLE IF NOT EXISTS catalog_item_suppliers (
+  catalog_item_id TEXT NOT NULL REFERENCES catalog_items(id) ON DELETE CASCADE,
+  supplier_id TEXT NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  preferred INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(catalog_item_id,supplier_id)
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_item_suppliers_supplier ON catalog_item_suppliers(supplier_id);
