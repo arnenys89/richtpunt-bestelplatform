@@ -25,7 +25,7 @@ function App(){
  const[data,setData]=useState(read),[tab,setTab]=useState('Overzicht'),[notice,setNotice]=useState('');
  const[teams,setTeams]=useState([]),[teamId,setTeamId]=useState(''),[newTeam,setNewTeam]=useState({name:'',campus:'Ninove',description:''});
  const[suppliers,setSuppliers]=useState([]),[supplierSearch,setSupplierSearch]=useState(''),[kboResults,setKboResults]=useState([]),[kboLoading,setKboLoading]=useState(false),[supplierForm,setSupplierForm]=useState({name:'',enterpriseNumber:'',vatNumber:'',street:'',houseNumber:'',box:'',zipcode:'',municipality:'',phone:'',email:'',website:''}),[editingSupplier,setEditingSupplier]=useState('');
- const[title,setTitle]=useState(''),[campus,setCampus]=useState('Ninove'),[motivation,setMotivation]=useState(''),[remarks,setRemarks]=useState(''),[items,setItems]=useState([]),[supplierNames,setSupplierNames]=useState(['','','']),[query,setQuery]=useState('');
+ const[title,setTitle]=useState(''),[campus,setCampus]=useState('Ninove'),[motivation,setMotivation]=useState(''),[remarks,setRemarks]=useState(''),[items,setItems]=useState([]),[query,setQuery]=useState('');
  const[purchase,setPurchase]=useState({orderItemId:'',supplier:'',number:'',date:today(),status:'Besteld',note:''});
  const[purchaseFilter,setPurchaseFilter]=useState({status:'Alle statussen',supplier:'',from:'',to:''});
  const[article,setArticle]=useState({name:'',eanCode:'',category:'Kantoormateriaal',description:'',imageUrl:'',unit:'stuk'}),[articleImageQuery,setArticleImageQuery]=useState('');
