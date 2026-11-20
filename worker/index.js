@@ -190,7 +190,7 @@ async function authenticate(req,env){
  if(isSuperadmin){
   // Only the verified Cloudflare Access email can grant this protected superadmin identity.
   // Reassert it on every authenticated request to prevent demotion or deactivation.
-  await env.DB.prepare("UPDATE users SET email=?,display_name=?,role='admin',campus=NULL,active=1 WHERE id=?").bind(email,name,user.id).run();
+  await env.DB.prepare("UPDATE users SET email=CASE WHEN ?=1 THEN ? ELSE email END,display_name=?,role='admin',campus=NULL,active=1 WHERE id=?").bind(email===protectedEmail?1:0,email,name,user.id).run();
   user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE id=?").bind(user.id).first();
  }else if(!user.active){
   throw Object.assign(new Error("Je account is gedeactiveerd. Contacteer de beheerder."),{status:403});
