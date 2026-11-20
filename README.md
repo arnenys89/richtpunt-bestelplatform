@@ -75,6 +75,12 @@ De bestaande instellingen uit jouw Cloudflare-dashboard zijn in `wrangler.toml` 
 
 De bestaande Access-app **Bestelplatform** beschermt `richtpunt-bestelplatform.pages.dev`. De huidige Allow-policy laat e-mailadressen met domein `ptiz.be` toe. De Worker en frontend moeten nog samen op deze hostnaam worden aangesloten en daarna getest.
 
+### EAN-codes voor artikelen
+
+Elk artikel kan optioneel een EAN-13-code krijgen. De artikelfiche controleert het formaat en het controlecijfer. De API weigert ongeldige EAN-codes en dubbele codes. De artikellijst en artikelzoekfunctie ondersteunen zoeken op EAN-code; bestelregels tonen de gekoppelde EAN-code.
+
+De migratie `0004_catalog_ean_code.sql` zet de eerdere tijdelijke DAN-kolom om naar `ean_code` en legt een unieke index aan. Voer alle openstaande D1-migraties in volgorde uit voordat de nieuwe Worker-versie wordt gepubliceerd.
+
 ### API-routes
 
 - `GET /api/me`: identiteit en rol van de aangemelde gebruiker.
