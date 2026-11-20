@@ -1,42 +1,53 @@
 # Richtpunt Bestelplatform
-Eerste prototype voor interne bestellingen binnen Richtpunt (Ninove en Zottegem).
 
-## Stack
-- React + Vite
-- Cloudflare Workers + D1
-- KBO Public Search SOAP R018.08 (backend-integratie in opstartfase)
-- Microsoft Entra ID: nog te configureren en server-side te valideren
+React + Vite frontend voor interne bestellingen binnen Richtpunt (campussen Ninove en Zottegem), met Cloudflare Workers en D1 als beoogde productiebackend.
 
-## Lokaal
-`npm install` en `npm run dev`.
+## Uitgewerkte schermen
 
-## Cloudflare
-1. Maak D1-database `richtpunt-bestelplatform`.
-2. Vul de echte database-ID in `wrangler.toml`.
-3. Voer `npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/schema.sql` uit.
-4. Configureer Worker Secrets: `KBO_USERNAME`, `KBO_PASSWORD`, `KBO_ENDPOINT`.
-5. Configureer Entra ID en implementeer tokenvalidatie vóór productie.
-6. `npm run build && npx wrangler deploy`.
+- **Overzicht:** aantallen, openstaande aanvragen, recente bestellingen en statusverdeling.
+- **Nieuwe bestelling:** campus, motivatie, artikelregels, hoeveelheden, verantwoording en maximaal drie leveranciersvoorstellen.
+- **Mijn bestellingen:** lijst, detailweergave, status, gekoppelde aankopen en herbestellen.
+- **Artikelenbibliotheek:** artikelen toevoegen, wijzigen en activeren/deactiveren.
+- **Aankopers:** aankoop aan een bestelregel koppelen, leverancier en besteldatum vastleggen, bestelbonnummer registreren, leverstatus opvolgen, opmerkingen bewaren en filteren op status/leverancier/periode.
+- **Instellingen:** demo-gebruikers en rollen, campuslijst, artikelcategorieën en bestelvoorkeuren.
 
-## Status
-Prototype, niet geschikt voor echte bestellingen of persoonsgegevens. De huidige UI gebruikt demo-informatie. Entra-authenticatie, autorisatie, persistente CRUD, e-mail, volledige KBO SOAP/XML-validatie en securitytests moeten nog worden afgewerkt.
+Er worden in het aankoopregister bewust geen bedragen of facturen bijgehouden.
 
+## Lokaal ontwikkelen
 
-## Afbeeldingen zonder R2
+```bash
+npm install
+npm run dev
+npm run build
+```
 
-Afbeeldingen kunnen in de GitHub-repository worden bewaard onder `public/uploads/`. De Worker kan een eerste Google Afbeeldingen-resultaat ophalen, het bestand controleren en via de GitHub Contents API committen. De afbeeldings-URL en opslagmetadata worden daarna in D1 bijgewerkt. Er is dus geen R2-bucket of R2-betaalprofiel nodig.
+## Huidige functionele status en belangrijke beperking
 
-### Eenmalige configuratie
+De huidige frontend bewaart gegevens in de lokale browseropslag (`localStorage`). Daardoor blijven demo-bestellingen na herladen op hetzelfde toestel en in dezelfde browser beschikbaar. De gegevens worden **niet** gedeeld met andere gebruikers, browsers of toestellen. De gebruikers- en rollenlijst in Instellingen is uitsluitend demonstratief en verleent geen echte toegangsrechten.
 
-1. Voer de bestaande basisschema's uit als dat nog niet gebeurd is:
-   `npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/schema.sql`
-2. Voer daarna de afbeeldingenmigratie uit:
-   `npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/z_image_assets.sql`
-3. Maak een GitHub fine-grained personal access token voor uitsluitend deze repository, met **Contents: Read and write**.
-4. Stel de volgende Worker-variabelen en secrets in:
-   - Variabele `GITHUB_REPOSITORY=arnenys89/richtpunt-bestelplatform`
-   - Secret `GITHUB_TOKEN`: het GitHub-token uit stap 3
-   - Secret `IMAGE_ADMIN_TOKEN`: een eigen lange, willekeurige toegangssleutel
-5. De importroute is `POST /api/images/import` met JSON `{ "kind": "article", "entityId": "...", "query": "..." }` of `kind: "supplier"`. De route vereist `Authorization: Bearer <IMAGE_ADMIN_TOKEN>`.
+De Worker bevat nog geen productieklare D1 CRUD-endpoints of Microsoft Entra ID-tokenvalidatie. De bestaande `/api/*`-fallback geeft voor niet-geïmplementeerde endpoints HTTP 501 terug. De website mag daarom nog niet gebruikt worden voor echte bestellingen of persoonsgegevens en de lokale demo mag niet als beveiligd gebruikersbeheer worden beschouwd.
 
-**Beveiliging en beperkingen:** de importroute is bewust niet publiek toegankelijk. De huidige demo heeft nog geen werkende Entra-aanmelding of rolcontrole. Koppel de importknop pas aan de interface nadat server-side gebruikers- en beheerdersautorisatie is afgewerkt; zet de toegangssleutel nooit in frontendcode. Google kan scraping blokkeren of de HTML wijzigen. Controleer ook of je de gevonden afbeelding volgens de licentievoorwaarden mag gebruiken. GitHub-opslag is geschikt voor een beperkte bibliotheek, niet voor grote aantallen of frequente uploads.
+## D1-databank
+
+De bestaande basisschema's staan in `db/schema.sql`. Het aankoopregister staat in `db/0002_purchase_register.sql`. Voer de migratie pas uit nadat de basisschema's op de D1-database zijn toegepast:
+
+```bash
+npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/schema.sql
+npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/0002_purchase_register.sql
+```
+
+De oudere afbeeldingsmigratie staat in `db/z_image_assets.sql` en moet alleen worden uitgevoerd wanneer de afbeeldingsfunctionaliteit wordt gebruikt en de kolommen nog niet bestaan.
+
+## Nog vereist voor productie
+
+1. Microsoft Entra ID-aanmelding configureren en access tokens server-side valideren.
+2. Autorisatie afdwingen op de server: aanvrager, aankoper en beheerder, met campus- en categoriegebonden rechten.
+3. D1 CRUD-endpoints bouwen voor bestellingen, orderregels, leveranciers, aankopen, gebruikers en instellingen.
+4. De frontend koppelen aan die API in plaats van browseropslag; foutafhandeling, laadstatussen en gelijktijdige wijzigingen toevoegen.
+5. Migraties uitvoeren op de juiste D1-database.
+6. KBO Public Search SOAP-response correct parsen en valideren; de huidige KBO-route is nog niet volledig.
+7. Geautomatiseerde tests, beveiligingscontrole en acceptatietest uitvoeren vóór publicatie.
+
+## Bestaande afbeeldingsopslag
+
+De bestaande image-import gebruikt GitHub-opslag onder `public/uploads/`. De Worker-route vereist de secrets `GITHUB_TOKEN` en `IMAGE_ADMIN_TOKEN`. Zet deze nooit in frontendcode. Controleer bij gebruik de licentievoorwaarden van afbeeldingen.
