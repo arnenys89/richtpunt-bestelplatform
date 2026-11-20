@@ -51,3 +51,32 @@ De oudere afbeeldingsmigratie staat in `db/z_image_assets.sql` en moet alleen wo
 ## Bestaande afbeeldingsopslag
 
 De bestaande image-import gebruikt GitHub-opslag onder `public/uploads/`. De Worker-route vereist de secrets `GITHUB_TOKEN` en `IMAGE_ADMIN_TOKEN`. Zet deze nooit in frontendcode. Controleer bij gebruik de licentievoorwaarden van afbeeldingen.
+
+
+## API-backend (nieuw)
+
+De Worker bevat nu beveiligde D1-routes voor:
+- `GET /api/me`: valideert het Microsoft Entra v2-toegangstoken en maakt een onbekende gebruiker standaard aan als `staff`.
+- `GET/POST /api/orders` en `PATCH /api/orders/:id`: aanvragen lezen, indienen en status wijzigen.
+- `GET/POST /api/purchases` en `PATCH /api/purchases/:id`: aankopen registreren met bestelbonnummer, leverancier, besteldatum en status.
+- `GET/POST /api/catalog` en `PATCH /api/catalog/:id`: artikelbeheer.
+- `GET /api/users`, `PATCH /api/users/:id` en `GET/PUT /api/settings`: beheerderfuncties.
+
+### Entra-configuratie voor de Worker
+
+Configureer vóór gebruik:
+- Worker-variabele `MICROSOFT_TENANT_ID`: de tenant-GUID van de schoolorganisatie (niet `common`).
+- Worker-variabele `ENTRA_CLIENT_ID`: de Application (client) ID van de Entra-appregistratie.
+- Worker-variabele `APP_ORIGIN`: de exacte publieke oorsprong van de website, bijvoorbeeld `https://bestellen.jouwdomein.be`.
+
+De client moet een Microsoft Entra **v2 access token** aanvragen voor deze API met audience gelijk aan `ENTRA_CLIENT_ID`. De Worker controleert handtekening via de tenant-JWKS, issuer, audience, tenant, vervaldatum en object-ID. Nieuwe gebruikers krijgen standaard de rol `staff`; een beheerder moet hun rol daarna toekennen in D1 of via een beveiligde beheerdersinterface.
+
+Voer de migratie uit na het basisschema:
+```bash
+npx wrangler d1 migrations apply richtpunt-bestelplatform --remote
+```
+Controleer vooraf met `npx wrangler d1 migrations list richtpunt-bestelplatform --remote` welke migraties Cloudflare ziet.
+
+### Nog niet productie-klaar
+
+De API-laag is toegevoegd, maar de huidige React-schermen gebruiken nog browseropslag en melden zich nog niet aan via MSAL/Entra. Ze roepen de nieuwe D1-endpoints dus nog niet aan. Campus-/categoriegebonden buyer assignments, KBO-responsparsing, CSRF-/originbeleid finaal afstemmen, API-integratietests en end-to-end tests moeten nog worden afgewerkt. De API controleert rollen, maar de fijnmazige campus- en categoriebeperkingen moeten nog worden toegevoegd voordat echte gebruikersgegevens of bestellingen verwerkt worden. Voer de D1-migratie en Worker-deployment niet uit zonder de Entra-configuratie en tests.
