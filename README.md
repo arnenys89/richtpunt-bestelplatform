@@ -85,16 +85,16 @@ Maak in Zero Trust een Access Self-hosted application voor de publieke hostnaam.
 
 Voer de D1-migraties uit nadat je gecontroleerd hebt welke al toegepast zijn:
 
-\`\`\`bash
+```bash
 npx wrangler d1 migrations list richtpunt-bestelplatform --remote
 npx wrangler d1 migrations apply richtpunt-bestelplatform --remote
-\`\`\`
+```
 
 De eerste gebruiker wordt automatisch als aanvrager aangemaakt. Ken de eerste beheerderrol handmatig toe nadat die gebruiker zich minstens één keer via Cloudflare Access heeft aangemeld. Zoek het e-mailadres op in D1 en voer daarna een gecontroleerde SQL-update uit:
 
-\`\`\`sql
+```sql
 UPDATE users SET role='admin', campus='Beide campussen' WHERE lower(email)=lower('beheerder@school.be');
-\`\`\`
+```
 
 ### Huidige grenzen
 
