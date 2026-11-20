@@ -17,7 +17,7 @@ const seedUsers=[
 const initial={orders:[],purchases:[],catalog:seedCatalog,users:seedUsers,settings:{campuses:['Ninove','Zottegem'],categories:['Kantoormateriaal','Schrijfmateriaal','Werkplaats','ICT'],requireJustification:true,allowReorder:true}};
 const read=()=>{try{return{...initial,...JSON.parse(localStorage.getItem('richtpunt-bestelplatform-v2')||'{}')}}catch{return initial}};
 const today=()=>new Date().toISOString().slice(0,10);
-const validEan13=value=>{if(!/^\\d{13}$/.test(value))return false;let sum=0;for(let i=0;i<12;i++)sum+=Number(value[i])*(i%2===0?1:3);return (10-sum%10)%10===Number(value[12])};
+const validEan13=value=>{if(!/^\d{13}$/.test(value))return false;let sum=0;for(let i=0;i<12;i++)sum+=Number(value[i])*(i%2===0?1:3);return (10-sum%10)%10===Number(value[12])};
 const id=prefix=>prefix+'-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,5).toUpperCase();
 const statuses=['Ingediend','In behandeling','Goedgekeurd','Besteld','Gedeeltelijk geleverd','Geleverd','Geannuleerd'];
 const purchaseStatuses=['Besteld','Gedeeltelijk geleverd','Geleverd','Geannuleerd'];
