@@ -1,55 +1,62 @@
 # Implementatiestatus — Richtpunt Bestelplatform
 
-Laatste codecontrole: 20 november 2026. De codewijzigingen staan in de hoofdbranch `main`. Dit document onderscheidt implementatie in de repository van bewezen werking in de productieomgeving.
+Laatste controle: 20 november 2026. De code staat op `main`. De productieomgeving is bijgewerkt met de Pages API-route, D1-migraties en R2-binding. Dit document maakt onderscheid tussen wat gedeployed is en wat nog functioneel moet worden getest.
 
-## Functionele implementatie
+## Functionele implementatie in de repository
 
 | Onderdeel | Status in code | Opmerking |
 |---|---|---|
-| Aanmelden via Cloudflare Access | Aanwezig | Worker valideert Access JWT en koppelt gebruikers aan D1. |
+| Aanmelden via Cloudflare Access | Aanwezig | Pages Function geeft de Access-identiteit door aan de API-handler; JWT-validatie gebeurt server-side. |
 | Rollen en gebruikersbeheer | Aanwezig | Beheer van rol, campus en actief/inactief; accounts ontstaan bij eerste aanmelding. |
-| Teams, teamleden en coördinatoren | Aanwezig | Eén team per bestelling; teamleden krijgen toegang tot de teamaanvragen. |
-| Aankopersrechten | Aanwezig | Toewijzing op campus en categorie; server-side controles in de API. |
+| Teams, teamleden en coördinatoren | Gedeeltelijk | Teamleden en coördinatorrol zijn aanwezig; coördinator heeft nog geen afzonderlijke rechten. |
+| Aankopersrechten | Gedeeltelijk | Campus- en categoriecontrole is aanwezig; autorisatiematrix en SQL-controles moeten nog met meerdere testaccounts worden gevalideerd. |
 | Bestellingen en bestelregels | Aanwezig | Team, campus, motivatie, algemene opmerkingen en verplichte verantwoording. |
 | Leveranciersvoorstellen | Aanwezig | Maximaal drie per bestelregel; koppeling aan leveranciersrecords. |
-| Bestelworkflow | Aanwezig | Ingediend, in behandeling, informatie gevraagd/ontvangen, goedgekeurd, afgekeurd, besteld, gedeeltelijk geleverd, geleverd en geannuleerd. |
-| Informatieverzoeken | Aanwezig | Vraag en antwoord worden bewaard en in de historiek opgenomen. |
-| Chronologisch logboek | Aanwezig | Bestel- en aankoopgebeurtenissen via `order_events`. |
-| Aankoopregister | Aanwezig in code | Leverancier, bestelbon, datum, status en opmerkingen; geen bedragen of facturen. |
+| Bestelworkflow | Gedeeltelijk | Statussen zijn aanwezig; rechten van de gewone aanvrager zijn beperkter dan de oorspronkelijke wens. |
+| Informatieverzoeken | Aanwezig | Vraag en antwoord worden bewaard. |
+| Chronologisch logboek | Gedeeltelijk | Belangrijke bestel- en aankoopgebeurtenissen worden geregistreerd; nog niet elke wijziging. |
+| Aankoopregister | Gedeeltelijk | Leverancier, bestelbon, datum, status en opmerkingen; filters op campus/team ontbreken en hoeveelheden per deellevering zijn niet uitgewerkt. |
 | Artikelenbibliotheek | Aanwezig | EAN-13, omschrijving, technische specificaties, eenheid, categorie, afbeelding en gekoppelde leveranciers. |
-| Leveranciersbibliotheek | Aanwezig | KBO-zoekfunctie, handmatig beheer, ondernemingsnummer, adres en contactgegevens. |
-| Afbeeldingsimport | Aanwezig in code | Zoekt een kandidaat en bewaart via R2; GitHub-opslag blijft fallback. Bron- en gebruiksrechten moeten worden gecontroleerd. |
-| Centrale instellingen | Aanwezig | Campussen, categorieën en herbestelvoorkeur in D1. |
+| Leveranciersbibliotheek | Aanwezig in code | KBO-zoekfunctie en handmatig beheer; echte KBO-verbinding wacht op accountsecrets. |
+| Afbeeldingsimport | Aanwezig in code | Zoekt een kandidaat en bewaart via R2. Gebruiksrechten moeten worden gecontroleerd; afbeelding bij elke afzonderlijke bestelregel ontbreekt nog. |
+| Centrale instellingen | Gedeeltelijk | Campussen, categorieën en herbestelvoorkeur; dynamische campuswaarden zijn nog niet volledig door de API ondersteund. |
+| Microsoft 365- en Smartschool-aanmelding | Ontbreekt | Alleen Cloudflare Access is geïntegreerd. |
 
-## Vastgestelde productieomgeving
+## Productieomgeving — bevestigd
 
-De remote D1-database `richtpunt-bestelplatform` is read-only gecontroleerd. De bestaande basistabellen zijn aanwezig. De tabellen `purchases` en `app_settings` ontbreken nog. De bestaande database bevat al `image_url` op artikelen en leveranciers en een `image_assets`-tabel. De volgende nieuwe kolommen en tabellen ontbreken nog en worden door de migraties toegevoegd: EAN-code, verantwoording, algemene opmerkingen, teams, teamkoppelingen, technische specificaties, contactpersoon, leveranciersvoorstellen en artikel-leverancierskoppelingen.
+- Cloudflare Pages-project: `richtpunt-bestelplatform`.
+- Productiedeployment: `f0a38317-ca9a-4469-93fb-e0db657363fa`.
+- Gedeployed commit: `ca2c6131696110c760e1c129850db60e4f691dbf`.
+- Productie-URL: https://richtpunt-bestelplatform.pages.dev
+- Pages build en Functions-bundeling: geslaagd.
+- GitHub Actions-build: geslaagd.
+- Pages Function-route `functions/api/[[path]].js` roept de gedeelde API-handler in `worker/index.js) aan.
+- Pages production bindings: D1 `DB` en R2 `IMAGES` zijn aanwezig.
+- R2-bucket `richtpunt-bestelplatform-images` is aangemaakt in regio WEUR (West-Europa), Standard.
+- De Worker-/Pages-variabelen voor Cloudflare Access en de KBO-endpoint zijn ingesteld.
 
-Er is nog geen `d1_migrations`-registratie aangetroffen. De migraties zijn daarom geordend als:
-- `0001_purchase_register.sql`
-- `001_catalog_ean_code.sql`
-- `002_order_item_justification.sql`
-- `003_order_remarks.sql`
-- `004_teams_suppliers_images.sql`
-- `005_image_source_url.sql`
+## D1-productiedatabase
 
-De migraties zijn **niet uitgevoerd**. Bestaande bestelgegevens worden niet overschreven.
+De remote D1-database `richtpunt-bestelplatform` is gemigreerd. De migraties zijn in deze volgorde uitgevoerd en geregistreerd in `d1_migrations`:
 
-## Externe blokkeringen en niet-uitgevoerde tests
+1. `0001_purchase_register.sql`
+2. `001_catalog_ean_code.sql`
+3. `002_order_item_justification.sql`
+4. `003_order_remarks.sql`
+5. `004_teams_suppliers_images.sql`
+6. `005_image_source_url.sql`
 
-1. **Cloudflare R2 staat nog niet aan voor het account.** De Cloudflare API gaf aan dat R2 eerst via het Cloudflare-dashboard moet worden ingeschakeld. De bucket `richtpunt-bestelplatform-images` bestaat dus nog niet.
-2. KBO-accountgegevens en requestbalans zijn niet geverifieerd. Stel `KBO_USERNAME`, `KBO_PASSWORD` en `KBO_ENDPOINT` als Worker secrets in.
-3. Er is geen geslaagde frontendbuild of end-to-endtest aangetoond. De buildworkflow staat in de repository, maar leverde nog geen workflowresultaat op.
-4. De applicatie is niet gedeployed. Er zijn geen D1-migraties uitgevoerd.
-5. Gedeeltelijke leveringen kunnen als status worden opgevolgd, maar er is nog geen hoeveelheid per deellevering.
-6. De volledige autorisatiematrix moet nog met meerdere echte testaccounts worden geverifieerd, zeker bij bestellingen met artikelen uit verschillende categorieën.
+De tabellen en kolommen zijn na uitvoering gecontroleerd. `PRAGMA foreign_key_check` gaf geen afwijkingen. De database bevatte vooraf geen bestellingen, artikelen of leveranciers; na de migraties zijn die aantallen nog steeds nul. Er zijn dus geen bestaande bestelrecords gewijzigd of verwijderd.
 
-## Vrijgavevolgorde
+## Nog uit te voeren
 
-1. Schakel R2 in via Cloudflare en maak de bucket `richtpunt-bestelplatform-images` aan.
-2. Stel de KBO Worker secrets in.
-3. Controleer de D1-migratiestatus en voer daarna de migraties in volgorde uit.
-4. Voer `npm install` en `npm run build` uit.
-5. Test met aparte accounts voor aanvrager, aankoper en beheerder, op beide campussen en met verschillende team-/categoriecombinaties.
-6. Controleer de bestelworkflow, de informatievragen, de aankoopregistratie, de historiek, EAN-validatie, KBO-resultaten en afbeeldingsopslag.
-7. Publiceer pas na een geslaagde acceptatietest.
+1. **KBO-secrets:** voeg `KBO_USERNAME` en `KBO_PASSWORD` als secrets toe aan de productieomgeving van het Pages-project. De endpoint-URL is al ingesteld. Zonder deze twee secrets werkt KBO-zoeken niet.
+2. **Praktijktest:** aanmelden via Cloudflare Access en testen van `/api/me), bestellen, gebruikersrollen, teams, aankopersrechten en aankoopregistratie met echte accounts.
+3. **Afbeeldingstest:** een artikelafbeelding importeren en controleren of het bestand in de R2-bucket wordt bewaard en opnieuw wordt weergegeven.
+4. **KBO-test:** na configuratie van de secrets een bedrijfsnaam en ondernemingsnummer opzoeken.
+5. **Beveiliging:** volledige autorisatiematrix testen, in het bijzonder gemengde bestellingen met meerdere categorieën.
+6. **Functionele afwerking:** Microsoft 365/Smartschool-aanmelding, afbeeldingen bij bestelregels, meerdere deelleveringen met aantallen, extra filters en overige punten uit de functionele blauwdruk.
+
+## Opmerking
+
+De productiecode is gedeployed en de databankstructuur is aanwezig. Dat is nog geen volledige acceptatietest. Gebruik het platform pas voor echte bestellingen nadat de aanmelding, API-routes, rolbeperkingen en R2-afbeeldingsopslag met testaccounts zijn gevalideerd.
