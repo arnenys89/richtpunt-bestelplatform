@@ -152,21 +152,41 @@ async function authenticate(req,env){
  const email=String(claims.email||"").trim().toLowerCase(),name=claims.name||email||"Gebruiker";
  if(!email)throw Object.assign(new Error("Cloudflare Access heeft geen e-mailadres meegestuurd."),{status:403});
  const identity="cloudflare:"+claims.sub;
- const isSuperadmin=email==="arne.nys@ptiz.be";
+ const protectedEmail="arne.nys@ptiz.be";
+ const staffDomains=new Set(["ptiz.be","richtpuntninovezottegem.be"]);
+ const normalizeStaffEmail=value=>{
+  const address=String(value||"").trim().toLowerCase();
+  const at=address.lastIndexOf("@");
+  if(at<1)return null;
+  const local=address.slice(0,at),domain=address.slice(at+1);
+  if(!staffDomains.has(domain))return null;
+  return local.replace(/\\./g,"")+"@richtpunt-staff";
+ };
  let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(identity).first();
  if(!user){
-  const byEmail=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE lower(email)=lower(?)").bind(email).first();
-  if(byEmail&&isSuperadmin){
-   await env.DB.prepare("UPDATE users SET entra_oid=?,email=?,display_name=?,role='admin',campus=NULL,active=1 WHERE id=?").bind(identity,email,name,byEmail.id).run();
-   user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE id=?").bind(byEmail.id).first();
-  }else if(byEmail){
-   throw Object.assign(new Error("Dit e-mailadres bestaat al met een andere identiteitskoppeling. Laat een beheerder de accountkoppeling controleren."),{status:409});
+  let byEmail=null;
+  const normalized=normalizeStaffEmail(email);
+  if(normalized){
+   const allUsers=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users").all();
+   const matches=(allUsers.results||[]).filter(candidate=>normalizeStaffEmail(candidate.email)===normalized);
+   if(matches.length>1)throw Object.assign(new Error("Meerdere bestaande accounts komen overeen met dit schooladres. Laat een beheerder de dubbele profielen eerst controleren; er is niets samengevoegd."),{status:409});
+   if(matches.length===1)byEmail=matches[0];
+  }else{
+   byEmail=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE lower(email)=lower(?)").bind(email).first();
+  }
+  if(byEmail){
+   // Keep the existing user ID, role, campus, active state and team memberships.
+   // A second Cloudflare identity is matched by verified school email, without
+   // replacing the first identity key or changing the profile's primary email.
+   user=byEmail;
   }else{
    const uid=crypto.randomUUID();
-   await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?,?,?,1)").bind(uid,identity,email,name,isSuperadmin?"admin":"staff",null).run();
-   user={id:uid,entra_oid:identity,email,display_name:name,role:isSuperadmin?"admin":"staff",campus:null,active:1};
+   const isNewSuperadmin=email===protectedEmail;
+   await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?,?,?,1)").bind(uid,identity,email,name,isNewSuperadmin?"admin":"staff",null).run();
+   user={id:uid,entra_oid:identity,email,display_name:name,role:isNewSuperadmin?"admin":"staff",campus:null,active:1};
   }
  }
+ const isSuperadmin=email===protectedEmail||String(user.email||"").trim().toLowerCase()===protectedEmail;
  if(isSuperadmin){
   // Only the verified Cloudflare Access email can grant this protected superadmin identity.
   // Reassert it on every authenticated request to prevent demotion or deactivation.
