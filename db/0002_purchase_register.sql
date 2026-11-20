@@ -19,3 +19,10 @@ CREATE INDEX IF NOT EXISTS idx_purchases_date ON purchases(purchase_date DESC);
 CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases(status,purchase_date DESC);
 CREATE INDEX IF NOT EXISTS idx_purchases_supplier ON purchases(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_purchases_order_item ON purchases(order_item_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  setting_key TEXT PRIMARY KEY,
+  setting_value TEXT NOT NULL,
+  updated_by TEXT REFERENCES users(id),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
