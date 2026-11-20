@@ -211,7 +211,7 @@ async function api(req,env,user,url){
  if(m&&method==="PATCH"){
   const b=await bodyJson(req);const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
   if(user.role==="staff"&&(order.requester_id!==user.id&&!await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first()))requireRole(user,"admin");
-  if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND ci.category=category))").bind(user.id,order.campus,order.team_id,order.id).first())requireRole(user,"admin");
+  if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments ba WHERE ba.user_id=? AND (ba.campus IS NULL OR ba.campus=?) AND (ba.team_id IS NULL OR ba.team_id=?) AND (ba.category IS NULL OR EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND ci.category=ba.category))").bind(user.id,order.campus,order.team_id,order.id).first())requireRole(user,"admin");
   const allowed=["submitted","in_review","info_requested","more_info_received","approved","rejected","ordered","partially_delivered","delivered","cancelled"];
   if(!allowed.includes(b.status))return json({error:"Ongeldige bestelstatus."},400);
   if(user.role==="staff"&&(b.status!=="cancelled"||!["submitted","in_review"].includes(order.status)))requireRole(user,"admin");
