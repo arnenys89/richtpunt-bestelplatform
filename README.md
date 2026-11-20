@@ -67,11 +67,13 @@ De Worker gebruikt Cloudflare Access als identiteitsprovider. Microsoft Entra ID
 
 Configureer in Cloudflare Workers (Settings → Variables and Secrets) de volgende variabelen met de waarden uit Cloudflare Zero Trust. Je kunt ze ook toevoegen aan een lokale, niet-gecommitte `wrangler`-omgeving:
 
-- `CF_ACCESS_TEAM_DOMAIN`: teamdomein, bijvoorbeeld `voorbeeld.cloudflareaccess.com` (zonder https://).
-- `CF_ACCESS_AUD`: de Application Audience (AUD) Tag van de Access-app die deze website beschermt.
-- `APP_ORIGIN`: de exacte oorsprong van de website, bijvoorbeeld `https://bestellen.voorbeeld.be`.
+De bestaande instellingen uit jouw Cloudflare-dashboard zijn in `wrangler.toml` overgenomen:
 
-Maak in Zero Trust een Access Self-hosted application voor de publieke hostnaam. Zorg dat de Access-policy enkel de gewenste schoolgebruikers toelaat. De Worker verwacht dat zowel de frontend als de API onder dezelfde beschermde hostnaam bereikbaar zijn.
+- `CF_ACCESS_TEAM_DOMAIN`: `sapoov.cloudflareaccess.com`.
+- `CF_ACCESS_AUD`: de AUD-tag van de bestaande Access-app **Bestelplatform**.
+- `APP_ORIGIN`: `https://richtpunt-bestelplatform.pages.dev`.
+
+De bestaande Access-app **Bestelplatform** beschermt `richtpunt-bestelplatform.pages.dev`. De huidige Allow-policy laat e-mailadressen met domein `ptiz.be` toe. De Worker en frontend moeten nog samen op deze hostnaam worden aangesloten en daarna getest.
 
 ### API-routes
 
