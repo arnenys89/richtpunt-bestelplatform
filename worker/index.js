@@ -111,30 +111,34 @@ async function importImage(req, env) {
 function b64url(s){return Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(s.length/4)*4,"=")),c=>c.charCodeAt(0))}
 function decodePart(s){return JSON.parse(new TextDecoder().decode(b64url(s)))}
 async function authenticate(req,env){
- const auth=req.headers.get("authorization")||"",token=auth.startsWith("Bearer ")?auth.slice(7):"";
- if(!token)throw Object.assign(new Error("Aanmelden vereist."),{status:401});
- const parts=token.split(".");if(parts.length!==3)throw Object.assign(new Error("Ongeldig toegangstoken."),{status:401});
- let head,claims;try{head=decodePart(parts[0]);claims=decodePart(parts[1])}catch{throw Object.assign(new Error("Ongeldig toegangstoken."),{status:401})}
- const tenant=env.MICROSOFT_TENANT_ID;
- const audience=env.ENTRA_CLIENT_ID;
- if(!tenant||tenant==="common"||!audience)throw Object.assign(new Error("Entra ID is nog niet volledig geconfigureerd: stel MICROSOFT_TENANT_ID (tenant GUID) en ENTRA_CLIENT_ID in."),{status:503});
- const issuer="https://login.microsoftonline.com/"+tenant+"/v2.0";
+ const token=req.headers.get("Cf-Access-Jwt-Assertion");
+ if(!token)throw Object.assign(new Error("Geen Cloudflare Access-identiteit gevonden. Meld je aan via de beveiligde website."),{status:401});
+ const parts=token.split(".");if(parts.length!==3)throw Object.assign(new Error("Ongeldig Cloudflare Access-token."),{status:401});
+ let head,claims;try{head=decodePart(parts[0]);claims=decodePart(parts[1])}catch{throw Object.assign(new Error("Ongeldig Cloudflare Access-token."),{status:401})}
+ const team=(env.CF_ACCESS_TEAM_DOMAIN||"").replace(/^https?:\\/\\//,"").replace(/\\/$/,"");
+ const expectedAud=env.CF_ACCESS_AUD;
+ if(!team||!expectedAud)throw Object.assign(new Error("Cloudflare Access is nog niet geconfigureerd. Stel CF_ACCESS_TEAM_DOMAIN en CF_ACCESS_AUD in als Worker-variabelen."),{status:503});
+ const issuer="https://"+team;
  const now=Math.floor(Date.now()/1000);
- if(claims.iss!==issuer||claims.aud!==audience||claims.tid!==tenant||!claims.oid||!claims.exp||claims.exp<now-60||claims.nbf>now+60)
-  throw Object.assign(new Error("Toegangstoken is ongeldig of verlopen."),{status:401});
- const jwksUrl="https://login.microsoftonline.com/"+tenant+"/discovery/v2.0/keys";
- const jwks=await fetch(jwksUrl,{cf:{cacheTtl:3600,cacheEverything:true}}).then(r=>{if(!r.ok)throw Error("Entra ondertekeningssleutels niet beschikbaar.");return r.json()});
- const jwk=jwks.keys.find(k=>k.kid===head.kid&&k.use==="sig");
- if(!jwk||head.alg!=="RS256")throw Object.assign(new Error("Tokenondertekening niet herkend."),{status:401});
+ const aud=Array.isArray(claims.aud)?claims.aud:[claims.aud];
+ if(claims.iss!==issuer||!aud.includes(expectedAud)||!claims.sub||!claims.exp||claims.exp<now-60||claims.nbf>now+60)
+  throw Object.assign(new Error("Cloudflare Access-token is ongeldig, verlopen of voor een andere toepassing bestemd."),{status:401});
+ const certs=await fetch(issuer+"/cdn-cgi/access/certs",{cf:{cacheTtl:3600,cacheEverything:true}}).then(r=>{if(!r.ok)throw Error("Cloudflare Access-certificaten niet beschikbaar.");return r.json()});
+ const jwk=certs.keys.find(k=>k.kid===head.kid);
+ if(!jwk||head.alg!=="RS256")throw Object.assign(new Error("Cloudflare Access-tokenondertekening niet herkend."),{status:401});
  const key=await crypto.subtle.importKey("jwk",jwk,{name:"RSASSA-PKCS1-v1_5",hash:"SHA-256"},false,["verify"]);
  const ok=await crypto.subtle.verify("RSASSA-PKCS1-v1_5",key,b64url(parts[2]),new TextEncoder().encode(parts[0]+"."+parts[1]));
- if(!ok)throw Object.assign(new Error("Tokenhandtekening ongeldig."),{status:401});
- const email=claims.preferred_username||claims.email||"",name=claims.name||email||"Gebruiker";
- let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(claims.oid).first();
+ if(!ok)throw Object.assign(new Error("Cloudflare Access-tokenhandtekening ongeldig."),{status:401});
+ const email=String(claims.email||"").toLowerCase(),name=claims.name||email||"Gebruiker";
+ if(!email)throw Object.assign(new Error("Cloudflare Access heeft geen e-mailadres meegestuurd."),{status:403});
+ const identity="cloudflare:"+claims.sub;
+ let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(identity).first();
  if(!user){
+  const byEmail=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE lower(email)=lower(?)").bind(email).first();
+  if(byEmail)throw Object.assign(new Error("Dit e-mailadres bestaat al met een andere identiteitskoppeling. Laat een beheerder de accountkoppeling controleren."),{status:409});
   const uid=crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?, 'staff',NULL,1)").bind(uid,claims.oid,email,name).run();
-  user={id:uid,entra_oid:claims.oid,email,display_name:name,role:"staff",campus:null,active:1};
+  await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?, 'staff',NULL,1)").bind(uid,identity,email,name).run();
+  user={id:uid,entra_oid:identity,email,display_name:name,role:"staff",campus:null,active:1};
  }
  if(!user.active)throw Object.assign(new Error("Je account is gedeactiveerd. Contacteer de beheerder."),{status:403});
  return user;
@@ -209,7 +213,7 @@ export default {
   const origin=env.APP_ORIGIN||"*";
   const headers={"access-control-allow-origin":origin,"access-control-allow-methods":"GET,POST,PATCH,PUT,OPTIONS","access-control-allow-headers":"content-type,authorization","vary":"Origin"};
   if(req.method==="OPTIONS")return new Response(null,{headers});
-  if(u.pathname==="/api/health")return json({ok:true,app:env.APP_NAME||"Richtpunt Bestelplatform",entraConfigured:!!(env.MICROSOFT_TENANT_ID&&env.MICROSOFT_TENANT_ID!=="common"&&env.ENTRA_CLIENT_ID),databaseConfigured:!!env.DB,kboConfigured:!!(env.KBO_USERNAME&&env.KBO_PASSWORD&&env.KBO_ENDPOINT)});
+  if(u.pathname==="/api/health")return json({ok:true,app:env.APP_NAME||"Richtpunt Bestelplatform",cloudflareAccessConfigured:!!(env.CF_ACCESS_TEAM_DOMAIN&&env.CF_ACCESS_AUD),databaseConfigured:!!env.DB,kboConfigured:!!(env.KBO_USERNAME&&env.KBO_PASSWORD&&env.KBO_ENDPOINT)});
   if(u.pathname==="/api/images/import"&&req.method==="POST"){try{return await importImage(req,env)}catch(e){return json({error:e.message||"Afbeeldingsimport mislukt."},500)}}
   if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json({rawResponse:xml,notice:"KBO SOAP-resultaat; bedrijfsgegevens moeten nog verder worden uitgelezen."})}catch(e){return json({error:e.message},503)}}
   if(u.pathname.startsWith("/api/")){if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);try{const user=await authenticate(req,env);const response=await api(req,env,user,u);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}catch(e){const response=json({error:e.message||"Interne API-fout."},e.status||500);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}}
