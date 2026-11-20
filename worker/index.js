@@ -107,29 +107,112 @@ async function importImage(req, env) {
     .bind(kind, safeId, path, imageUrl, imageResponse.type).run();
   return json({ ok: true, imageUrl, path, storage: "GitHub repository" });
 }
-export default {
-  async fetch(req, env) {
-    const u = new URL(req.url);
-    if (req.method === "OPTIONS") return new Response(null, { headers: cors });
-    if (u.pathname === "/api/health") return json({
-      ok: true, app: env.APP_NAME || "Richtpunt Bestelplatform",
-      kboConfigured: !!(env.KBO_USERNAME && env.KBO_PASSWORD && env.KBO_ENDPOINT),
-      imageStorageConfigured: !!(env.GITHUB_TOKEN && env.GITHUB_REPOSITORY && env.IMAGE_ADMIN_TOKEN)
-    });
-    if (u.pathname === "/api/images/import" && req.method === "POST") {
-      try { return await importImage(req, env); }
-      catch (e) { return json({ error: e.message || "Onverwachte fout bij afbeeldingsimport." }, 500); }
-    }
-    if (u.pathname === "/api/kbo/search" && req.method === "GET") {
-      try {
-        const terms = (u.searchParams.get("q") || "").trim().split(/\s+/).filter(Boolean).slice(0, 10);
-        if (!terms.length) return json({ results: [] });
-        const parts = terms.map(t => "<mes:Phoneme>" + esc(t) + "</mes:Phoneme>").join("");
-        const xml = await kbo(env, "<mes:ReadEnterpriseByPhonemeRequest>" + parts + "<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");
-        return json({ rawResponse: xml, notice: "KBO-response; parsing en tokenvalidatie nog te implementeren" });
-      } catch (e) { return json({ error: e.message }, 503); }
-    }
-    if (u.pathname.startsWith("/api/")) return json({ error: "API nog niet geactiveerd: Entra-tokenvalidatie en overige D1-endpoints ontbreken." }, 501);
-    return env.ASSETS ? env.ASSETS.fetch(req) : json({ error: "Frontend niet gebouwd" }, 404);
+
+function b64url(s){return Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(s.length/4)*4,"=")),c=>c.charCodeAt(0))}
+function decodePart(s){return JSON.parse(new TextDecoder().decode(b64url(s)))}
+async function authenticate(req,env){
+ const auth=req.headers.get("authorization")||"",token=auth.startsWith("Bearer ")?auth.slice(7):"";
+ if(!token)throw Object.assign(new Error("Aanmelden vereist."),{status:401});
+ const parts=token.split(".");if(parts.length!==3)throw Object.assign(new Error("Ongeldig toegangstoken."),{status:401});
+ let head,claims;try{head=decodePart(parts[0]);claims=decodePart(parts[1])}catch{throw Object.assign(new Error("Ongeldig toegangstoken."),{status:401})}
+ const tenant=env.MICROSOFT_TENANT_ID;
+ const audience=env.ENTRA_CLIENT_ID;
+ if(!tenant||tenant==="common"||!audience)throw Object.assign(new Error("Entra ID is nog niet volledig geconfigureerd: stel MICROSOFT_TENANT_ID (tenant GUID) en ENTRA_CLIENT_ID in."),{status:503});
+ const issuer="https://login.microsoftonline.com/"+tenant+"/v2.0";
+ const now=Math.floor(Date.now()/1000);
+ if(claims.iss!==issuer||claims.aud!==audience||claims.tid!==tenant||!claims.oid||!claims.exp||claims.exp<now-60||claims.nbf>now+60)
+  throw Object.assign(new Error("Toegangstoken is ongeldig of verlopen."),{status:401});
+ const jwksUrl="https://login.microsoftonline.com/"+tenant+"/discovery/v2.0/keys";
+ const jwks=await fetch(jwksUrl,{cf:{cacheTtl:3600,cacheEverything:true}}).then(r=>{if(!r.ok)throw Error("Entra ondertekeningssleutels niet beschikbaar.");return r.json()});
+ const jwk=jwks.keys.find(k=>k.kid===head.kid&&k.use==="sig");
+ if(!jwk||head.alg!=="RS256")throw Object.assign(new Error("Tokenondertekening niet herkend."),{status:401});
+ const key=await crypto.subtle.importKey("jwk",jwk,{name:"RSASSA-PKCS1-v1_5",hash:"SHA-256"},false,["verify"]);
+ const ok=await crypto.subtle.verify("RSASSA-PKCS1-v1_5",key,b64url(parts[2]),new TextEncoder().encode(parts[0]+"."+parts[1]));
+ if(!ok)throw Object.assign(new Error("Tokenhandtekening ongeldig."),{status:401});
+ const email=claims.preferred_username||claims.email||"",name=claims.name||email||"Gebruiker";
+ let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(claims.oid).first();
+ if(!user){
+  const uid=crypto.randomUUID();
+  await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?, 'staff',NULL,1)").bind(uid,claims.oid,email,name).run();
+  user={id:uid,entra_oid:claims.oid,email,display_name:name,role:"staff",campus:null,active:1};
+ }
+ if(!user.active)throw Object.assign(new Error("Je account is gedeactiveerd. Contacteer de beheerder."),{status:403});
+ return user;
+}
+const requireRole=(user,...roles)=>{if(!roles.includes(user.role))throw Object.assign(new Error("Je hebt onvoldoende rechten voor deze actie."),{status:403})};
+const bodyJson=async req=>{try{return await req.json()}catch{throw Object.assign(new Error("Ongeldige JSON-inhoud."),{status:400})}};
+const clean=(v,max=500)=>String(v??"").trim().slice(0,max);
+async function api(req,env,user,url){
+ const path=url.pathname,method=req.method;
+ if(path==="/api/me"&&method==="GET")return json({user});
+ if(path==="/api/catalog"&&method==="GET"){
+  const rows=await env.DB.prepare("SELECT id,name,category,description,unit,active,image_url FROM catalog_items WHERE active=1 ORDER BY category,name").all();return json({items:rows.results||[]});
+ }
+ if(path==="/api/catalog"&&method==="POST"){
+  requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!clean(b.name,180))return json({error:"Artikelnaam ontbreekt."},400);
+  const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO catalog_items (id,name,category,description,unit,active,created_by) VALUES (?,?,?,?,?,1,?)").bind(id,clean(b.name,180),clean(b.category,100),clean(b.description,1000),clean(b.unit,40)||"stuk",user.id).run();return json({id},201);
+ }
+ let m=path.match(/^\/api\/catalog\/([^/]+)$/);
+ if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE catalog_items SET name=COALESCE(?,name),category=COALESCE(?,category),unit=COALESCE(?,unit),active=COALESCE(?,active) WHERE id=?").bind(b.name?clean(b.name,180):null,b.category?clean(b.category,100):null,b.unit?clean(b.unit,40):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true})}
+ if(path==="/api/orders"&&method==="GET"){
+  const rows=user.role==="admin"||user.role==="buyer"
+   ?await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id ORDER BY o.created_at DESC").all()
+   :await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id WHERE o.requester_id=? ORDER BY o.created_at DESC").bind(user.id).all();
+  const orders=await Promise.all((rows.results||[]).map(async o=>{const items=await env.DB.prepare("SELECT id,catalog_item_id,item_name,quantity,unit,status,buyer_note FROM order_items WHERE order_id=? ORDER BY created_at").bind(o.id).all();return{...o,items:items.results||[]}}));
+  return json({orders});
+ }
+ if(path==="/api/orders"&&method==="POST"){
+  const b=await bodyJson(req);const title=clean(b.title,180),items=Array.isArray(b.items)?b.items:[];
+  if(!title||!["Ninove","Zottegem","Beide campussen"].includes(b.campus)||!items.length||items.length>100)return json({error:"Controleer titel, campus en bestelregels."},400);
+  const orderId=crypto.randomUUID(),statements=[env.DB.prepare("INSERT INTO orders (id,requester_id,title,campus,motivation,status) VALUES (?,?,?,?,?,'submitted')").bind(orderId,user.id,title,b.campus,clean(b.motivation,3000))];
+  for(const item of items){if(!clean(item.name,180)||!Number.isFinite(Number(item.quantity))||Number(item.quantity)<=0)return json({error:"Elke bestelregel moet een naam en positief aantal bevatten."},400);
+   statements.push(env.DB.prepare("INSERT INTO order_items (id,order_id,catalog_item_id,item_name,quantity,unit,status) VALUES (?,?,?,?,?,?,'pending')").bind(crypto.randomUUID(),orderId,item.catalogItemId||null,clean(item.name,180),Number(item.quantity),clean(item.unit,40)||"stuk"));
   }
+  statements.push(env.DB.prepare("INSERT INTO order_events (id,order_id,actor_id,event_type,message) VALUES (?,?,?,'submitted',?)").bind(crypto.randomUUID(),orderId,user.id,"Bestelling ingediend"));
+  await env.DB.batch(statements);return json({id:orderId},201);
+ }
+ m=path.match(/^\/api\/orders\/([^/]+)$/);
+ if(m&&method==="PATCH"){
+  const b=await bodyJson(req);const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
+  if(user.role==="staff"&&order.requester_id!==user.id)requireRole(user,"admin");
+  const allowed=["submitted","in_review","approved","ordered","partially_delivered","delivered","cancelled"];
+  if(!allowed.includes(b.status))return json({error:"Ongeldige bestelstatus."},400);
+  if(user.role==="staff"&&b.status!=="cancelled")requireRole(user,"admin");
+  await env.DB.batch([env.DB.prepare("UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("INSERT INTO order_events (id,order_id,actor_id,event_type,message) VALUES (?,?,?,'status_changed',?)").bind(crypto.randomUUID(),m[1],user.id,"Status gewijzigd naar "+b.status)]);
+  return json({ok:true});
+ }
+ if(path==="/api/purchases"&&method==="GET"){
+  requireRole(user,"buyer","admin");
+  const rows=await env.DB.prepare("SELECT p.*,s.name supplier_name,oi.item_name,o.title order_title,o.campus FROM purchases p JOIN suppliers s ON s.id=p.supplier_id JOIN order_items oi ON oi.id=p.order_item_id JOIN orders o ON o.id=oi.order_id ORDER BY p.purchase_date DESC").all();return json({purchases:rows.results||[]});
+ }
+ if(path==="/api/purchases"&&method==="POST"){
+  requireRole(user,"buyer","admin");const b=await bodyJson(req);
+  if(!b.orderItemId||!clean(b.supplier,180)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(b.date)||!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Controleer bestelregel, leverancier, datum en status."},400);
+  const item=await env.DB.prepare("SELECT oi.id,oi.order_id FROM order_items oi JOIN orders o ON o.id=oi.order_id WHERE oi.id=?").bind(b.orderItemId).first();if(!item)return json({error:"Bestelregel niet gevonden."},404);
+  let supplier=await env.DB.prepare("SELECT id FROM suppliers WHERE lower(name)=lower(?) LIMIT 1").bind(clean(b.supplier,180)).first();
+  if(!supplier){const sid=crypto.randomUUID();await env.DB.prepare("INSERT INTO suppliers (id,name,source) VALUES (?,?,'manual')").bind(sid,clean(b.supplier,180)).run();supplier={id:sid}}
+  const pid=crypto.randomUUID();
+  await env.DB.batch([env.DB.prepare("INSERT INTO purchases (id,order_item_id,supplier_id,purchase_order_number,purchase_date,status,note,created_by) VALUES (?,?,?,?,?,?,?,?)").bind(pid,item.id,supplier.id,clean(b.number,100)||null,b.date,b.status,clean(b.note,2000),user.id),env.DB.prepare("UPDATE order_items SET status=?,buyer_id=?,buyer_note=? WHERE id=?").bind(b.status,item.id,user.id,clean(b.note,2000),item.id),env.DB.prepare("INSERT INTO order_events (id,order_id,order_item_id,actor_id,event_type,message) VALUES (?,?,?,?,'purchase_registered',?)").bind(crypto.randomUUID(),item.order_id,item.id,user.id,"Aankoop geregistreerd; bestelbon "+clean(b.number,100))]);
+  return json({id:pid},201);
+ }
+ m=path.match(/^\/api\/purchases\/([^/]+)$/);
+ if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Ongeldige aankoopstatus."},400);await env.DB.prepare("UPDATE purchases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]).run();return json({ok:true})}
+ if(path==="/api/users"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT id,email,display_name,role,campus,active FROM users ORDER BY display_name").all();return json({users:rows.results||[]})}
+ if(path.startsWith("/api/users/")&&method==="PATCH"){requireRole(user,"admin");const uid=path.split("/").pop(),b=await bodyJson(req);if(!["staff","buyer","admin"].includes(b.role))return json({error:"Ongeldige rol."},400);await env.DB.prepare("UPDATE users SET role=?,campus=?,active=? WHERE id=?").bind(b.role,clean(b.campus,100)||null,b.active===false?0:1,uid).run();return json({ok:true})}
+ if(path==="/api/settings"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT setting_key,setting_value FROM app_settings ORDER BY setting_key").all();return json({settings:rows.results||[]})}
+ if(path==="/api/settings"&&method==="PUT"){requireRole(user,"admin");const b=await bodyJson(req);if(!b.key||typeof b.value!=="string")return json({error:"Ongeldige instelling."},400);await env.DB.prepare("INSERT INTO app_settings(setting_key,setting_value,updated_by) VALUES(?,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").bind(clean(b.key,100),b.value.slice(0,4000),user.id).run();return json({ok:true})}
+ return json({error:"API-route niet gevonden."},404);
+}
+export default {
+ async fetch(req,env){
+  const u=new URL(req.url);
+  const origin=env.APP_ORIGIN||"*";
+  const headers={"access-control-allow-origin":origin,"access-control-allow-methods":"GET,POST,PATCH,PUT,OPTIONS","access-control-allow-headers":"content-type,authorization","vary":"Origin"};
+  if(req.method==="OPTIONS")return new Response(null,{headers});
+  if(u.pathname==="/api/health")return json({ok:true,app:env.APP_NAME||"Richtpunt Bestelplatform",entraConfigured:!!(env.MICROSOFT_TENANT_ID&&env.MICROSOFT_TENANT_ID!=="common"&&env.ENTRA_CLIENT_ID),databaseConfigured:!!env.DB,kboConfigured:!!(env.KBO_USERNAME&&env.KBO_PASSWORD&&env.KBO_ENDPOINT)});
+  if(u.pathname==="/api/images/import"&&req.method==="POST"){try{return await importImage(req,env)}catch(e){return json({error:e.message||"Afbeeldingsimport mislukt."},500)}}
+  if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json({rawResponse:xml,notice:"KBO SOAP-resultaat; bedrijfsgegevens moeten nog verder worden uitgelezen."})}catch(e){return json({error:e.message},503)}}
+  if(u.pathname.startsWith("/api/")){if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);try{const user=await authenticate(req,env);return await api(req,env,user,u)}catch(e){return json({error:e.message||"Interne API-fout."},e.status||500)}}
+  return env.ASSETS?env.ASSETS.fetch(req):json({error:"Frontend niet gebouwd."},404);
+ }
 };
