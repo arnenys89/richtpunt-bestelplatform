@@ -14,6 +14,3 @@ migrations_dir = "db"
 [vars]
 APP_NAME = "Richtpunt Bestelplatform"
 GITHUB_REPOSITORY = "arnenys89/richtpunt-bestelplatform"
-CF_ACCESS_TEAM_DOMAIN = "VUL-JE-TEAM-DOMAIN-IN"
-CF_ACCESS_AUD = "VUL-JE-ACCESS-APPLICATION-AUD-IN"
-APP_ORIGIN = "VUL-JE-PUBLIEKE-WEBSITE-ORIGIN-IN"
