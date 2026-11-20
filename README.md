@@ -40,6 +40,7 @@ Voer daarna de geordende migraties uit vanuit `db/migrations/`:
 3. `002_order_item_justification.sql` — verantwoording per bestelregel.
 4. `003_order_remarks.sql` — algemene opmerkingen.
 5. `004_teams_suppliers_images.sql` — teams, rechten, leverancierskoppelingen, afbeeldingen en technische specificaties.
+6. `005_image_source_url.sql` — bronverwijzing van geïmporteerde afbeeldingen.
 
 Controleer vóór uitvoering de bestaande status:
 
