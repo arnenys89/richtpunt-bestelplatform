@@ -149,18 +149,32 @@ async function authenticate(req,env){
  const key=await crypto.subtle.importKey("jwk",jwk,{name:"RSASSA-PKCS1-v1_5",hash:"SHA-256"},false,["verify"]);
  const ok=await crypto.subtle.verify("RSASSA-PKCS1-v1_5",key,b64url(parts[2]),new TextEncoder().encode(parts[0]+"."+parts[1]));
  if(!ok)throw Object.assign(new Error("Cloudflare Access-tokenhandtekening ongeldig."),{status:401});
- const email=String(claims.email||"").toLowerCase(),name=claims.name||email||"Gebruiker";
+ const email=String(claims.email||"").trim().toLowerCase(),name=claims.name||email||"Gebruiker";
  if(!email)throw Object.assign(new Error("Cloudflare Access heeft geen e-mailadres meegestuurd."),{status:403});
  const identity="cloudflare:"+claims.sub;
+ const isSuperadmin=email==="arne.nys@ptiz.be";
  let user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE entra_oid=?").bind(identity).first();
  if(!user){
   const byEmail=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE lower(email)=lower(?)").bind(email).first();
-  if(byEmail)throw Object.assign(new Error("Dit e-mailadres bestaat al met een andere identiteitskoppeling. Laat een beheerder de accountkoppeling controleren."),{status:409});
-  const uid=crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?, 'staff',NULL,1)").bind(uid,identity,email,name).run();
-  user={id:uid,entra_oid:identity,email,display_name:name,role:"staff",campus:null,active:1};
+  if(byEmail&&isSuperadmin){
+   await env.DB.prepare("UPDATE users SET entra_oid=?,email=?,display_name=?,role='admin',campus=NULL,active=1 WHERE id=?").bind(identity,email,name,byEmail.id).run();
+   user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE id=?").bind(byEmail.id).first();
+  }else if(byEmail){
+   throw Object.assign(new Error("Dit e-mailadres bestaat al met een andere identiteitskoppeling. Laat een beheerder de accountkoppeling controleren."),{status:409});
+  }else{
+   const uid=crypto.randomUUID();
+   await env.DB.prepare("INSERT INTO users (id,entra_oid,email,display_name,role,campus,active) VALUES (?,?,?,?,?,?,1)").bind(uid,identity,email,name,isSuperadmin?"admin":"staff",null).run();
+   user={id:uid,entra_oid:identity,email,display_name:name,role:isSuperadmin?"admin":"staff",campus:null,active:1};
+  }
  }
- if(!user.active)throw Object.assign(new Error("Je account is gedeactiveerd. Contacteer de beheerder."),{status:403});
+ if(isSuperadmin){
+  // Only the verified Cloudflare Access email can grant this protected superadmin identity.
+  // Reassert it on every authenticated request to prevent demotion or deactivation.
+  await env.DB.prepare("UPDATE users SET email=?,display_name=?,role='admin',campus=NULL,active=1 WHERE id=?").bind(email,name,user.id).run();
+  user=await env.DB.prepare("SELECT id,entra_oid,email,display_name,role,campus,active FROM users WHERE id=?").bind(user.id).first();
+ }else if(!user.active){
+  throw Object.assign(new Error("Je account is gedeactiveerd. Contacteer de beheerder."),{status:403});
+ }
  return user;
 }
 const requireRole=(user,...roles)=>{if(!roles.includes(user.role))throw Object.assign(new Error("Je hebt onvoldoende rechten voor deze actie."),{status:403})};
@@ -249,7 +263,19 @@ async function api(req,env,user,url){
  m=path.match(/^\/api\/purchases\/([^/]+)$/);
  if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Ongeldige aankoopstatus."},400);const p=await env.DB.prepare("SELECT p.id,p.order_item_id,oi.order_id,o.campus,o.team_id,ci.category FROM purchases p JOIN order_items oi ON oi.id=p.order_item_id JOIN orders o ON o.id=oi.order_id LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE p.id=?").bind(m[1]).first();if(!p)return json({error:"Aankoop niet gevonden."},404);if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=? OR campus='Beide campussen') AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR category=?)").bind(user.id,p.campus,p.team_id,p.category).first())requireRole(user,"admin");await env.DB.batch([env.DB.prepare("UPDATE purchases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("UPDATE order_items SET status=? WHERE id=?").bind(b.status,p.order_item_id),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'delivery_status_changed',?)").bind(crypto.randomUUID(),p.order_id,p.order_item_id,user.id,"Leverstatus gewijzigd naar "+b.status)]);await syncOrderStatus(env,p.order_id);return json({ok:true})}
  if(path==="/api/users"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT id,email,display_name,role,campus,active FROM users ORDER BY display_name").all();return json({users:rows.results||[]})}
- if(path.startsWith("/api/users/")&&method==="PATCH"){requireRole(user,"admin");const uid=path.split("/").pop(),b=await bodyJson(req);if(!["staff","buyer","admin"].includes(b.role))return json({error:"Ongeldige rol."},400);await env.DB.prepare("UPDATE users SET role=?,campus=?,active=? WHERE id=?").bind(b.role,clean(b.campus,100)||null,b.active===false?0:1,uid).run();return json({ok:true})}
+ if(path.startsWith("/api/users/")&&method==="PATCH"){
+  requireRole(user,"admin");
+  const uid=path.split("/").pop(),b=await bodyJson(req);
+  const target=await env.DB.prepare("SELECT id,email FROM users WHERE id=?").bind(uid).first();
+  if(!target)return json({error:"Gebruiker niet gevonden."},404);
+  if(String(target.email||"").trim().toLowerCase()==="arne.nys@ptiz.be"){
+   await env.DB.prepare("UPDATE users SET role='admin',campus=NULL,active=1 WHERE id=?").bind(uid).run();
+   return json({ok:true,protectedSuperadmin:true});
+  }
+  if(!["staff","buyer","admin"].includes(b.role))return json({error:"Ongeldige rol."},400);
+  await env.DB.prepare("UPDATE users SET role=?,campus=?,active=? WHERE id=?").bind(b.role,clean(b.campus,100)||null,b.active===false?0:1,uid).run();
+  return json({ok:true});
+ }
  m=path.match(/^\/api\/users\/([^/]+)\/assignments$/);
  if(m&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT campus,category,team_id FROM buyer_assignments WHERE user_id=? ORDER BY campus,category").bind(m[1]).all();return json({assignments:rows.results||[]})}
  if(m&&method==="PUT"){requireRole(user,"admin");const b=await bodyJson(req),assignments=Array.isArray(b.assignments)?b.assignments:[];const statements=[env.DB.prepare("DELETE FROM buyer_assignments WHERE user_id=?").bind(m[1])];for(const a of assignments){const campus=clean(a.campus,40),category=clean(a.category,100);if(!["Ninove","Zottegem","Beide campussen"].includes(campus)||!category)continue;statements.push(env.DB.prepare("INSERT INTO buyer_assignments(user_id,campus,category,team_id) VALUES(?,?,?,?)").bind(m[1],campus,category,a.teamId||null))}await env.DB.batch(statements);return json({ok:true})}
