@@ -252,7 +252,7 @@ async function api(req,env,user,url){
   let rows;
   if(user.role==="admin")rows=await env.DB.prepare("SELECT * FROM teams WHERE active=1 ORDER BY campus,name").all();
   else if(user.role==="staff")rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE tm.user_id=? AND t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
-  else rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN buyer_assignments ba ON ba.user_id=? AND (ba.team_id=t.id OR ba.team_id IS NULL) AND (ba.campus=t.campus OR ba.campus IS NULL) WHERE t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
+  else rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN buyer_assignments ba ON ba.user_id=? AND (ba.team_id=t.id OR ba.team_id IS NULL) AND (ba.campus=t.campus OR ba.campus IS NULL OR ba.campus='Beide campussen' OR t.campus='Beide campussen') WHERE t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
   return json({teams:rows.results||[]});
  }
  if(path==="/api/teams"&&method==="POST"){
