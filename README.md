@@ -27,28 +27,28 @@ De frontend haalt de identiteit, bestellingen en artikellijst op via de Cloudfla
 
 ## D1-databank en migraties
 
-De initiële databank wordt één keer aangemaakt met het basisschema en het aankoopregister:
+Voor een volledig nieuwe D1-database voer je eerst het basisschema één keer uit:
 
 ```bash
 npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/schema.sql
-npx wrangler d1 execute richtpunt-bestelplatform --remote --file=./db/0002_purchase_register.sql
 ```
 
-Daarna gebruikt Wrangler uitsluitend de geordende migraties in `db/migrations/`:
+Voer daarna de geordende migraties uit vanuit `db/migrations/`:
 
-1. `001_catalog_ean_code.sql`
-2. `002_order_item_justification.sql`
-3. `003_order_remarks.sql`
-4. `004_teams_suppliers_images.sql`
+1. `0001_purchase_register.sql` — aankoopregister en centrale instellingen.
+2. `001_catalog_ean_code.sql` — EAN-13.
+3. `002_order_item_justification.sql` — verantwoording per bestelregel.
+4. `003_order_remarks.sql` — algemene opmerkingen.
+5. `004_teams_suppliers_images.sql` — teams, rechten, leverancierskoppelingen, afbeeldingen en technische specificaties.
 
-Controleer vóór uitvoering altijd eerst de migratiestatus:
+Controleer vóór uitvoering de bestaande status:
 
 ```bash
 npx wrangler d1 migrations list richtpunt-bestelplatform --remote
 npx wrangler d1 migrations apply richtpunt-bestelplatform --remote
 ```
 
-Voer het basisschema en het aankoopregister niet opnieuw uit op een bestaande database. De oudere rootbestanden `db/0003_catalog_dan_code.sql`, `db/0004_catalog_ean_code.sql` en `db/z_image_assets.sql` zijn historische migratiebestanden en horen niet bij de actuele Wrangler-migratiemap. Voer die niet afzonderlijk uit.
+De bestaande D1-database bevat het basisschema en de oude afbeeldingskolommen al. De aankoopregistertabellen en verschillende nieuwe velden ontbreken nog. Voer het basisschema niet opnieuw uit op een bestaande database. De rootbestanden `db/0002_purchase_register.sql`, `db/0003_catalog_dan_code.sql`, `db/0004_catalog_ean_code.sql` en `db/z_image_assets.sql` zijn historische bestanden; voer die niet afzonderlijk uit.
 
 ## Bestaande afbeeldingsopslag
 
