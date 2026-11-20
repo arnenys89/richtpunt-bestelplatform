@@ -66,7 +66,7 @@ function App(){
  const addArticle=async()=>{
   if(!identity){notify('Artikelen beheren kan alleen na aanmelden via Cloudflare Access.');return}
   if(!article.name.trim()){notify('Geef het artikel een naam.');return}
-  const eanCode=article.eanCode.trim();if(eanCode&&!/^\d{13}$/.test(eanCode)){notify('Een EAN-code moet uit 13 cijfers bestaan.');return}const payload={name:article.name.trim(),eanCode,category:article.category,unit:article.unit};
+  const eanCode=article.eanCode.trim();if(eanCode&&!validEan13(eanCode)){notify('Een EAN-code moet uit 13 cijfers bestaan.');return}const payload={name:article.name.trim(),eanCode,category:article.category,unit:article.unit};
   const url=editingArticle?'/api/catalog/'+editingArticle:'/api/catalog';
   const r=await fetch(url,{method:editingArticle?'PATCH':'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
   if(!r.ok){const e=await r.json();notify(e.error||'Artikel bewaren mislukt.');return}
