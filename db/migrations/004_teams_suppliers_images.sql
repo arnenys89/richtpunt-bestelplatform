@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS supplier_proposals (
 );
 ALTER TABLE catalog_items ADD COLUMN image_url TEXT;
 ALTER TABLE suppliers ADD COLUMN image_url TEXT;
+ALTER TABLE suppliers ADD COLUMN contact_person TEXT;
 CREATE TABLE IF NOT EXISTS image_assets (
   entity_type TEXT NOT NULL CHECK(entity_type IN ('article','supplier')),
   entity_id TEXT NOT NULL,
