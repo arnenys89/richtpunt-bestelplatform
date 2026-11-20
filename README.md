@@ -53,30 +53,51 @@ De oudere afbeeldingsmigratie staat in `db/z_image_assets.sql` en moet alleen wo
 De bestaande image-import gebruikt GitHub-opslag onder `public/uploads/`. De Worker-route vereist de secrets `GITHUB_TOKEN` en `IMAGE_ADMIN_TOKEN`. Zet deze nooit in frontendcode. Controleer bij gebruik de licentievoorwaarden van afbeeldingen.
 
 
-## API-backend (nieuw)
+## API-backend met Cloudflare Access
 
-De Worker bevat nu beveiligde D1-routes voor:
-- `GET /api/me`: valideert het Microsoft Entra v2-toegangstoken en maakt een onbekende gebruiker standaard aan als `staff`.
-- `GET/POST /api/orders` en `PATCH /api/orders/:id`: aanvragen lezen, indienen en status wijzigen.
-- `GET/POST /api/purchases` en `PATCH /api/purchases/:id`: aankopen registreren met bestelbonnummer, leverancier, besteldatum en status.
-- `GET/POST /api/catalog` en `PATCH /api/catalog/:id`: artikelbeheer.
-- `GET /api/users`, `PATCH /api/users/:id` en `GET/PUT /api/settings`: beheerderfuncties.
+De Worker gebruikt Cloudflare Access als identiteitsprovider. Microsoft Entra ID/MSAL is voor deze versie niet nodig.
 
-### Entra-configuratie voor de Worker
+### Identiteitscontrole
 
-Configureer vóór gebruik:
-- Worker-variabele `MICROSOFT_TENANT_ID`: de tenant-GUID van de schoolorganisatie (niet `common`).
-- Worker-variabele `ENTRA_CLIENT_ID`: de Application (client) ID van de Entra-appregistratie.
-- Worker-variabele `APP_ORIGIN`: de exacte publieke oorsprong van de website, bijvoorbeeld `https://bestellen.jouwdomein.be`.
+- Cloudflare Access beschermt de volledige applicatiehostnaam, inclusief `/api/*`.
+- Cloudflare Access voegt na een geslaagde aanmelding de header `Cf-Access-Jwt-Assertion` toe.
+- De Worker controleert de JWT-handtekening met de publieke sleutels van de Cloudflare Access-teamomgeving en controleert issuer, audience, vervaltijd en subject.
+- Het e-mailadres en de subject-ID uit het gevalideerde Access-token worden gekoppeld aan een gebruiker in D1. Nieuwe accounts krijgen standaard de rol `staff`.
+- Een bestaande account met hetzelfde e-mailadres maar een andere identiteitskoppeling wordt niet automatisch samengevoegd.
 
-De client moet een Microsoft Entra **v2 access token** aanvragen voor deze API met audience gelijk aan `ENTRA_CLIENT_ID`. De Worker controleert handtekening via de tenant-JWKS, issuer, audience, tenant, vervaldatum en object-ID. Nieuwe gebruikers krijgen standaard de rol `staff`; een beheerder moet hun rol daarna toekennen in D1 of via een beveiligde beheerdersinterface.
+### Cloudflare-configuratie
 
-Voer de migratie uit na het basisschema:
-```bash
+Vul in `wrangler.toml` de volgende variabelen in met de waarden uit Cloudflare Zero Trust:
+
+- `CF_ACCESS_TEAM_DOMAIN`: teamdomein, bijvoorbeeld `voorbeeld.cloudflareaccess.com` (zonder https://).
+- `CF_ACCESS_AUD`: de Application Audience (AUD) Tag van de Access-app die deze website beschermt.
+- `APP_ORIGIN`: de exacte oorsprong van de website, bijvoorbeeld `https://bestellen.voorbeeld.be`.
+
+Maak in Zero Trust een Access Self-hosted application voor de publieke hostnaam. Zorg dat de Access-policy enkel de gewenste schoolgebruikers toelaat. De Worker verwacht dat zowel de frontend als de API onder dezelfde beschermde hostnaam bereikbaar zijn.
+
+### API-routes
+
+- `GET /api/me`: identiteit en rol van de aangemelde gebruiker.
+- `GET/POST /api/orders` en `PATCH /api/orders/:id`: bestellingen ophalen, indienen en status wijzigen.
+- `GET/POST /api/purchases` en `PATCH /api/purchases/:id`: aankopen met bestelbonnummer, leverancier, besteldatum en status.
+- `GET/POST /api/catalog` en `PATCH /api/catalog/:id`: artikelen.
+- `GET /api/users`, `PATCH /api/users/:id` en `GET/PUT /api/settings`: beheerderroutes.
+
+### Database en eerste beheerder
+
+Voer de D1-migraties uit nadat je gecontroleerd hebt welke al toegepast zijn:
+
+\`\`\`bash
+npx wrangler d1 migrations list richtpunt-bestelplatform --remote
 npx wrangler d1 migrations apply richtpunt-bestelplatform --remote
-```
-Controleer vooraf met `npx wrangler d1 migrations list richtpunt-bestelplatform --remote` welke migraties Cloudflare ziet.
+\`\`\`
 
-### Nog niet productie-klaar
+De eerste gebruiker wordt automatisch als aanvrager aangemaakt. Ken de eerste beheerderrol handmatig toe nadat die gebruiker zich minstens één keer via Cloudflare Access heeft aangemeld. Zoek het e-mailadres op in D1 en voer daarna een gecontroleerde SQL-update uit:
 
-De API-laag is toegevoegd, maar de huidige React-schermen gebruiken nog browseropslag en melden zich nog niet aan via MSAL/Entra. Ze roepen de nieuwe D1-endpoints dus nog niet aan. Campus-/categoriegebonden buyer assignments, KBO-responsparsing, CSRF-/originbeleid finaal afstemmen, API-integratietests en end-to-end tests moeten nog worden afgewerkt. De API controleert rollen, maar de fijnmazige campus- en categoriebeperkingen moeten nog worden toegevoegd voordat echte gebruikersgegevens of bestellingen verwerkt worden. Voer de D1-migratie en Worker-deployment niet uit zonder de Entra-configuratie en tests.
+\`\`\`sql
+UPDATE users SET role='admin', campus='Beide campussen' WHERE lower(email)=lower('beheerder@school.be');
+\`\`\`
+
+### Huidige grenzen
+
+De frontend haalt bij het laden de identiteit, bestellingen en artikellijst via de API op. Nieuwe bestellingen en aankopen worden via D1 opgeslagen. Niet alle bestaande instellingen- en artikelbeheerschermen zijn al volledig gekoppeld aan de API. Fijnmazige campus-/categorie-autorisatie via `buyer_assignments`, KBO-responsparsing, integratietests en volledige end-to-endtests moeten nog worden afgewerkt. Voer geen echte productiegegevens in vooraleer die controles zijn uitgevoerd.
