@@ -21,3 +21,10 @@
 .supplier-image-editor{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
 .supplier-image-editor input{max-width:280px}
 .supplier-image-editor small{flex-basis:100%;color:#666}
+
+.team-member-edit{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0}
+.team-member-edit .toggle{flex:1}
+.team-member-edit select{max-width:150px}
+.item-suppliers{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex-basis:100%}
+.item-suppliers label{display:grid;gap:4px}
+@media(max-width:700px){.item-suppliers{grid-template-columns:1fr}}
