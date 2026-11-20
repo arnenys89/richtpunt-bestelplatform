@@ -157,7 +157,7 @@ async function api(req,env,user,url){
   const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO catalog_items (id,name,dan_code,category,description,unit,active,created_by) VALUES (?,?,?,?,?,?,1,?)").bind(id,clean(b.name,180),clean(b.danCode,100)||null,clean(b.category,100),clean(b.description,1000),clean(b.unit,40)||"stuk",user.id).run();return json({id},201);
  }
  let m=path.match(/^\/api\/catalog\/([^/]+)$/);
- if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);await env.DB.prepare("undefined").bind(b.name?clean(b.name,180):null,Object.prototype.hasOwnProperty.call(b,"danCode")?(clean(b.danCode,100)||null):undefined,b.category?clean(b.category,100):null,b.unit?clean(b.unit,40):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true})}
+ if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE catalog_items SET name=COALESCE(?,name),dan_code=COALESCE(?,dan_code),category=COALESCE(?,category),unit=COALESCE(?,unit),active=COALESCE(?,active) WHERE id=?").bind(b.name?clean(b.name,180):null,Object.prototype.hasOwnProperty.call(b,"danCode")?clean(b.danCode,100):null,b.category?clean(b.category,100):null,b.unit?clean(b.unit,40):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true})}
  if(path==="/api/orders"&&method==="GET"){
   const rows=user.role==="admin"||user.role==="buyer"
    ?await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id ORDER BY o.created_at DESC").all()
