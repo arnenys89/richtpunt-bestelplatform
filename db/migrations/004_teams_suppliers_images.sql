@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS supplier_proposals (
   UNIQUE(order_item_id,supplier_id)
 );
 ALTER TABLE catalog_items ADD COLUMN image_url TEXT;
+ALTER TABLE catalog_items ADD COLUMN technical_specs TEXT;
 ALTER TABLE suppliers ADD COLUMN image_url TEXT;
 ALTER TABLE suppliers ADD COLUMN contact_person TEXT;
 CREATE TABLE IF NOT EXISTS image_assets (
