@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS image_assets (
   entity_id TEXT NOT NULL,
   repository_path TEXT NOT NULL,
   image_url TEXT NOT NULL,
+  source_url TEXT,
   content_type TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
