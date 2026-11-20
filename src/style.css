@@ -9,3 +9,10 @@
 .ask-question{display:grid;gap:12px;margin-top:14px;padding:14px;background:#fbf5dc;border-radius:8px}
 .ask-question label{display:grid;gap:6px}
 .error{display:block;color:#a21d1d;margin:8px 0}
+
+.assignment-editor{margin:8px 0 18px;padding:12px 14px;background:#f7f7f4;border:1px solid #e8e8e4;border-radius:8px}
+.assignment-editor>b{display:block;margin-bottom:8px}
+.assignment-editor .toggle{display:flex;align-items:center;gap:8px;margin:6px 0}
+.assignment-editor .form-row{display:flex;gap:8px;align-items:center;margin:10px 0}
+.assignment-editor .item{margin:6px 0}
+.assignment-editor small{display:block;margin-top:6px;color:#666}
