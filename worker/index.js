@@ -190,11 +190,14 @@ async function api(req,env,user,url){
  m=path.match(/^\/api\/orders\/([^/]+)$/);
  if(m&&method==="PATCH"){
   const b=await bodyJson(req);const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
-  if(user.role==="staff"&&order.requester_id!==user.id)requireRole(user,"admin");
+  if(user.role==="staff"&&(order.requester_id!==user.id&&!await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first()))requireRole(user,"admin");
+  if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?)").bind(user.id,order.campus,order.team_id).first())requireRole(user,"admin");
   const allowed=["submitted","in_review","info_requested","more_info_received","approved","rejected","ordered","partially_delivered","delivered","cancelled"];
   if(!allowed.includes(b.status))return json({error:"Ongeldige bestelstatus."},400);
-  if(user.role==="staff"&&b.status!=="cancelled")requireRole(user,"admin");
-  await env.DB.batch([env.DB.prepare("UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("INSERT INTO order_events (id,order_id,actor_id,event_type,message) VALUES (?,?,?,'status_changed',?)").bind(crypto.randomUUID(),m[1],user.id,"Status gewijzigd naar "+b.status)]);
+  if(user.role==="staff"&&(b.status!=="cancelled"||!["submitted","in_review"].includes(order.status)))requireRole(user,"admin");
+  if(user.role==="buyer"&&!({submitted:["in_review","info_requested","approved","rejected"],in_review:["info_requested","approved","rejected"],info_requested:[],more_info_received:["in_review","approved","rejected"],approved:["ordered"],ordered:["partially_delivered","delivered"],partially_delivered:["delivered"],delivered:[],rejected:[],cancelled:[]}[order.status]||[]).includes(b.status))return json({error:"Deze statusovergang is niet toegestaan."},409);
+  if(b.status==="rejected"&&!clean(b.reason,1000))return json({error:"Een afkeuringsreden is verplicht."},400);
+  await env.DB.batch([env.DB.prepare("UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("INSERT INTO order_events (id,order_id,actor_id,event_type,message) VALUES (?,?,?,'status_changed',?)").bind(crypto.randomUUID(),m[1],user.id,b.status==="rejected"?"Afgekeurd: "+clean(b.reason,1000):"Status gewijzigd naar "+b.status)]);
   return json({ok:true});
  }
  if(path==="/api/purchases"&&method==="GET"){
@@ -212,7 +215,7 @@ async function api(req,env,user,url){
   return json({id:pid},201);
  }
  m=path.match(/^\/api\/purchases\/([^/]+)$/);
- if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Ongeldige aankoopstatus."},400);await env.DB.prepare("UPDATE purchases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]).run();return json({ok:true})}
+ if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Ongeldige aankoopstatus."},400);const p=await env.DB.prepare("SELECT p.id,p.order_item_id,oi.order_id FROM purchases p JOIN order_items oi ON oi.id=p.order_item_id WHERE p.id=?").bind(m[1]).first();if(!p)return json({error:"Aankoop niet gevonden."},404);await env.DB.batch([env.DB.prepare("UPDATE purchases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("UPDATE order_items SET status=? WHERE id=?").bind(b.status,p.order_item_id),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'delivery_status_changed',?)").bind(crypto.randomUUID(),p.order_id,p.order_item_id,user.id,"Leverstatus gewijzigd naar "+b.status)]);return json({ok:true})}
  if(path==="/api/users"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT id,email,display_name,role,campus,active FROM users ORDER BY display_name").all();return json({users:rows.results||[]})}
  if(path.startsWith("/api/users/")&&method==="PATCH"){requireRole(user,"admin");const uid=path.split("/").pop(),b=await bodyJson(req);if(!["staff","buyer","admin"].includes(b.role))return json({error:"Ongeldige rol."},400);await env.DB.prepare("UPDATE users SET role=?,campus=?,active=? WHERE id=?").bind(b.role,clean(b.campus,100)||null,b.active===false?0:1,uid).run();return json({ok:true})}
  if(path==="/api/settings"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT setting_key,setting_value FROM app_settings ORDER BY setting_key").all();return json({settings:rows.results||[]})}
@@ -257,6 +260,10 @@ async function api(req,env,user,url){
  }
  m=path.match(/^\/api\/orders\/([^/]+)\/information-requests$/);
  if(m&&method==="GET"){
+  const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
+  const member=order.team_id?await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first():null;
+  const assignment=user.role==="buyer"?await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?)").bind(user.id,order.campus,order.team_id).first():null;
+  if(user.role!=="admin"&&!(user.role==="staff"&&(order.requester_id===user.id||member))&&!(user.role==="buyer"&&assignment))requireRole(user,"admin");
   const rows=await env.DB.prepare("SELECT ir.*,u.display_name requester_name FROM information_requests ir JOIN users u ON u.id=ir.requested_by WHERE ir.order_item_id IN (SELECT id FROM order_items WHERE order_id=?) ORDER BY ir.requested_at").bind(m[1]).all();return json({requests:rows.results||[]});
  }
  if(m&&method==="POST"){
@@ -295,7 +302,7 @@ export default {
   if(req.method==="OPTIONS")return new Response(null,{headers});
   if(u.pathname==="/api/health")return json({ok:true,app:env.APP_NAME||"Richtpunt Bestelplatform",cloudflareAccessConfigured:!!(env.CF_ACCESS_TEAM_DOMAIN&&env.CF_ACCESS_AUD),databaseConfigured:!!env.DB,kboConfigured:!!(env.KBO_USERNAME&&env.KBO_PASSWORD&&env.KBO_ENDPOINT)});
   if(u.pathname==="/api/images/import"&&req.method==="POST"){try{return await importImage(req,env)}catch(e){return json({error:e.message||"Afbeeldingsimport mislukt."},500)}}
-  if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json({rawResponse:xml,notice:"KBO SOAP-resultaat; bedrijfsgegevens moeten nog verder worden uitgelezen."})}catch(e){return json({error:e.message},503)}}
+  if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);const kboUser=await authenticate(req,env);requireRole(kboUser,"buyer","admin");const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json({rawResponse:xml,notice:"KBO SOAP-resultaat; bedrijfsgegevens moeten nog verder worden uitgelezen."})}catch(e){return json({error:e.message},503)}}
   if(u.pathname.startsWith("/api/")){if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);try{const user=await authenticate(req,env);const response=await api(req,env,user,u);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}catch(e){const response=json({error:e.message||"Interne API-fout."},e.status||500);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}}
   return env.ASSETS?env.ASSETS.fetch(req):json({error:"Frontend niet gebouwd."},404);
  }
