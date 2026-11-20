@@ -52,7 +52,7 @@ Voer het basisschema en het aankoopregister niet opnieuw uit op een bestaande da
 
 ## Bestaande afbeeldingsopslag
 
-De bestaande image-import gebruikt GitHub-opslag onder `public/uploads/`. De Worker-route vereist de secrets `GITHUB_TOKEN` en `IMAGE_ADMIN_TOKEN`. Zet deze nooit in frontendcode. Controleer bij gebruik de licentievoorwaarden van afbeeldingen.
+Afbeeldingen worden bij voorkeur in Cloudflare R2 bewaard via de binding `IMAGES`. Maak de bucket aan met `npx wrangler r2 bucket create richtpunt-bestelplatform-images`. De Worker kan terugvallen op GitHub-opslag wanneer R2 niet is gekoppeld. Afbeeldingsimport vereist een aangemelde aankoper of beheerder. Controleer altijd de gebruiksrechten en bron van een afbeelding; zoekresultaten vormen geen licentiebewijs.
 
 
 ## API-backend met Cloudflare Access
@@ -91,6 +91,12 @@ De migratie `0004_catalog_ean_code.sql` zet de eerdere tijdelijke DAN-kolom om n
 - `GET/POST /api/orders` en `PATCH /api/orders/:id`: bestellingen ophalen, indienen en status wijzigen.
 - `GET/POST /api/purchases` en `PATCH /api/purchases/:id`: aankopen met bestelbonnummer, leverancier, besteldatum en status.
 - `GET/POST /api/catalog` en `PATCH /api/catalog/:id`: artikelen.
+- `GET/PUT /api/catalog/:id/suppliers`: artikel-leverancierskoppelingen.
+- `GET/POST /api/teams`, `PATCH /api/teams/:id` en `GET/PUT /api/teams/:id/members`: teams en teamleden.
+- `GET/POST /api/suppliers` en `PATCH /api/suppliers/:id`: leveranciers.
+- `GET/PUT /api/users/:id/assignments`: aankopersrechten.
+- `GET /api/orders/:id/events`, informatieverzoeken en antwoorden: historiek en communicatie.
+- `POST /api/images/import` en `GET /api/images/:key`: beveiligde afbeeldingsimport en R2-opslag.
 - `GET /api/users`, `PATCH /api/users/:id` en `GET/PUT /api/settings`: beheerderroutes.
 
 ### Database en eerste beheerder
@@ -111,3 +117,8 @@ UPDATE users SET role='admin', campus='Beide campussen' WHERE lower(email)=lower
 ### Huidige grenzen
 
 De frontend haalt bij het laden de identiteit, bestellingen en artikellijst via de API op. Nieuwe bestellingen en aankopen worden via D1 opgeslagen. Niet alle bestaande instellingen- en artikelbeheerschermen zijn al volledig gekoppeld aan de API. Fijnmazige campus-/categorie-autorisatie via `buyer_assignments`, KBO-responsparsing, integratietests en volledige end-to-endtests moeten nog worden afgewerkt. Voer geen echte productiegegevens in vooraleer die controles zijn uitgevoerd.
+
+
+## Functionele uitwerking
+
+De volledige functionele blauwdruk en acceptatiecriteria staan in [docs/FUNCTIONELE-BLAUWDRUK.md](docs/FUNCTIONELE-BLAUWDRUK.md). De huidige implementatie is een ontwikkelversie. Niet alle acceptatietests zijn uitgevoerd; voer geen productiegegevens in en publiceer niet voordat de D1-migraties, R2-bucket, rechtenmatrix en end-to-endtests zijn gecontroleerd.
