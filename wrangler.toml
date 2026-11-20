@@ -1,23 +1,21 @@
-name = "richtpunt-bestelplatform-api"
-main = "worker/index.js"
+name = "richtpunt-bestelplatform"
+pages_build_output_dir = "./dist"
 compatibility_date = "2026-11-16"
-workers_dev = true
-[assets]
-directory = "./dist"
-binding = "ASSETS"
-not_found_handling = "single-page-application"
+compatibility_flags = ["nodejs_compat"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "richtpunt-bestelplatform"
 database_id = "e75a0ded-3245-4465-b609-e44838262f60"
 migrations_dir = "db/migrations"
-[vars]
-APP_NAME = "Richtpunt Bestelplatform"
-GITHUB_REPOSITORY = "arnenys89/richtpunt-bestelplatform"
-CF_ACCESS_TEAM_DOMAIN = "sapoov.cloudflareaccess.com"
-CF_ACCESS_AUD = "c76aa7483c5c89e436cb4ddf2ad0d545f79e612d9701ed357aa8921ab77dea73"
-APP_ORIGIN = "https://richtpunt-bestelplatform.pages.dev"
 
 [[r2_buckets]]
 binding = "IMAGES"
 bucket_name = "richtpunt-bestelplatform-images"
+
+[vars]
+APP_NAME = "Richtpunt Bestelplatform"
+APP_ORIGIN = "https://richtpunt-bestelplatform.pages.dev"
+CF_ACCESS_TEAM_DOMAIN = "sapoov.cloudflareaccess.com"
+CF_ACCESS_AUD = "c76aa7483c5c89e436cb4ddf2ad0d545f79e612d9701ed357aa8921ab77dea73"
+KBO_ENDPOINT = "https://kbopub.economie.fgov.be/kbopubws180000/services/wsKBOPub"
