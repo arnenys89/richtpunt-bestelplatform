@@ -303,6 +303,9 @@ async function api(req,env,user,url){
   const answer=clean(b.answer,3000);if(!answer)return json({error:"Vul een antwoord in."},400);
   await env.DB.batch([env.DB.prepare("UPDATE information_requests SET response_text=?,responded_at=CURRENT_TIMESTAMP WHERE id=?").bind(answer,m[1]),env.DB.prepare("UPDATE orders SET status='more_info_received',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(ir.order_id),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'information_responded',?)").bind(crypto.randomUUID(),ir.order_id,ir.order_item_id,user.id,answer)]);return json({ok:true});
  }
+ m=path.match(/^\/api\/catalog\/([^/]+)\/suppliers$/);
+ if(m&&method==="GET"){const rows=await env.DB.prepare("SELECT s.id,s.name,s.enterprise_number,s.website,cis.preferred FROM catalog_item_suppliers cis JOIN suppliers s ON s.id=cis.supplier_id WHERE cis.catalog_item_id=? ORDER BY cis.preferred DESC,s.name").bind(m[1]).all();return json({suppliers:rows.results||[]})}
+ if(m&&method==="PUT"){requireRole(user,"buyer","admin");const b=await bodyJson(req),ids=Array.isArray(b.supplierIds)?[...new Set(b.supplierIds)].slice(0,50):[];const statements=[env.DB.prepare("DELETE FROM catalog_item_suppliers WHERE catalog_item_id=?").bind(m[1])];for(const sid of ids)statements.push(env.DB.prepare("INSERT INTO catalog_item_suppliers(catalog_item_id,supplier_id,preferred) VALUES(?,?,?)").bind(m[1],sid,sid===b.preferredSupplierId?1:0));await env.DB.batch(statements);return json({ok:true})}
  if(path==="/api/suppliers"&&method==="GET"){
   const rows=await env.DB.prepare("SELECT id,enterprise_number,vat_number,name,street,house_number,box,zipcode,municipality,country,phone,email,website,image_url,source,kbo_snapshot_date FROM suppliers ORDER BY name").all();return json({suppliers:rows.results||[]});
  }
