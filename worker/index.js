@@ -71,6 +71,32 @@ async function importImage(req, env) {
   if (!["article", "supplier"].includes(kind) || !entityId || !query || query.length > 180) {
     return json({ error: "Geef een geldig type, record-ID en zoekterm op." }, 400);
   }
+  const searchUrl = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(query);
+  const search = await fetch(searchUrl, { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" } });
+  if (!search.ok) return json({ error: "Google Afbeeldingen gaf HTTP " + search.status + "." }, 502);
+  const candidates = imageCandidates(await search.text());
+  if (!candidates.length) return json({ error: "Geen bruikbare afbeeldingsresultaten gevonden." }, 404);
+  let imageResponse = null;
+  for (const candidate of candidates) {
+    try {
+      const u = new URL(candidate);
+      const host = u.hostname.toLowerCase();
+      if (!["http:","https:"].includes(u.protocol) || host==="localhost" || host==="127.0.0.1" || host==="::1" || /^10\\./.test(host) || /^192\\.168\\./.test(host) || /^172\\.(1[6-9]|2[0-9]|3[01])\\./.test(host)) continue;
+      const r = await fetch(u.toString(), { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" }, redirect: "follow" });
+      const finalUrl = new URL(r.url);
+      if (!["http:","https:"].includes(finalUrl.protocol)) continue;
+      const type = (r.headers.get("content-type") || "").split(";")[0].toLowerCase();
+      const length = Number(r.headers.get("content-length") || 0);
+      if (!r.ok || !type.startsWith("image/") || type==="image/svg+xml" || length>4*1024*1024) continue;
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      if (!bytes.length || bytes.length>4*1024*1024) continue;
+      imageResponse={bytes,type};
+      break;
+    } catch {}
+  }
+  if (!imageResponse) return json({ error: "De gevonden afbeeldingen konden niet veilig worden opgehaald." }, 502);
+  const ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[imageResponse.type];
+  if(!ext)return json({error:"Alleen JPEG, PNG, WebP en GIF worden ondersteund."},415);
   const safeId = entityId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
   if (!safeId) return json({ error: "Ongeldig record-ID." }, 400);
   const path = "uploads/" + (kind === "article" ? "articles" : "suppliers") + "/" + safeId + "." + ext;
