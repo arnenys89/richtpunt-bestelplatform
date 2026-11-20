@@ -1,11 +1,12 @@
 PRAGMA foreign_keys = ON;
 
--- Aankoopregister: één aangevraagde bestelregel kan over meerdere leveranciers
+-- Aankoopregister: een aangevraagde bestelregel kan over meerdere leveranciers
 -- verdeeld worden. Bedrag en factuur worden bewust niet bijgehouden.
 CREATE TABLE IF NOT EXISTS purchases (
   id TEXT PRIMARY KEY,
   order_item_id TEXT NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
   supplier_id TEXT NOT NULL REFERENCES suppliers(id),
+  purchase_order_number TEXT,
   purchase_date TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'besteld'
     CHECK (status IN ('besteld','gedeeltelijk_geleverd','geleverd','geannuleerd')),
