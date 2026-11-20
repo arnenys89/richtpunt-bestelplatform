@@ -164,7 +164,7 @@ async function api(req,env,user,url){
   let rows;
   if(user.role==="admin") rows=await env.DB.prepare("SELECT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id ORDER BY o.created_at DESC").all();
   else if(user.role==="staff") rows=await env.DB.prepare("SELECT DISTINCT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id LEFT JOIN team_members tm ON tm.team_id=o.team_id WHERE o.requester_id=? OR tm.user_id=? ORDER BY o.created_at DESC").bind(user.id,user.id).all();
-  else rows=await env.DB.prepare("SELECT DISTINCT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id LEFT JOIN buyer_assignments ba ON (ba.campus=o.campus OR ba.campus IS NULL) AND (ba.team_id=o.team_id OR ba.team_id IS NULL) WHERE o.campus=COALESCE(?,o.campus) OR ba.user_id=? ORDER BY o.created_at DESC").bind(user.campus,user.id).all();
+  else rows=await env.DB.prepare("SELECT DISTINCT o.*,u.display_name requester_name FROM orders o JOIN users u ON u.id=o.requester_id JOIN buyer_assignments ba ON ba.user_id=? AND (ba.campus IS NULL OR ba.campus=o.campus) AND (ba.team_id IS NULL OR ba.team_id=o.team_id) AND (ba.category IS NULL OR EXISTS (SELECT 1 FROM order_items oi JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=o.id AND ci.category=ba.category)) ORDER BY o.created_at DESC").bind(user.id).all();
   const orders=await Promise.all((rows.results||[]).map(async o=>{const items=await env.DB.prepare("SELECT oi.id,oi.catalog_item_id,oi.item_name,oi.quantity,oi.unit,oi.status,oi.buyer_note,oi.justification,ci.ean_code FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? ORDER BY oi.created_at").bind(o.id).all();return{...o,items:items.results||[]}}));
   return json({orders});
  }
@@ -191,7 +191,7 @@ async function api(req,env,user,url){
  if(m&&method==="PATCH"){
   const b=await bodyJson(req);const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
   if(user.role==="staff"&&order.requester_id!==user.id)requireRole(user,"admin");
-  const allowed=["submitted","in_review","approved","ordered","partially_delivered","delivered","cancelled"];
+  const allowed=["submitted","in_review","info_requested","more_info_received","approved","rejected","ordered","partially_delivered","delivered","cancelled"];
   if(!allowed.includes(b.status))return json({error:"Ongeldige bestelstatus."},400);
   if(user.role==="staff"&&b.status!=="cancelled")requireRole(user,"admin");
   await env.DB.batch([env.DB.prepare("UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("INSERT INTO order_events (id,order_id,actor_id,event_type,message) VALUES (?,?,?,'status_changed',?)").bind(crypto.randomUUID(),m[1],user.id,"Status gewijzigd naar "+b.status)]);
@@ -217,6 +217,74 @@ async function api(req,env,user,url){
  if(path.startsWith("/api/users/")&&method==="PATCH"){requireRole(user,"admin");const uid=path.split("/").pop(),b=await bodyJson(req);if(!["staff","buyer","admin"].includes(b.role))return json({error:"Ongeldige rol."},400);await env.DB.prepare("UPDATE users SET role=?,campus=?,active=? WHERE id=?").bind(b.role,clean(b.campus,100)||null,b.active===false?0:1,uid).run();return json({ok:true})}
  if(path==="/api/settings"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT setting_key,setting_value FROM app_settings ORDER BY setting_key").all();return json({settings:rows.results||[]})}
  if(path==="/api/settings"&&method==="PUT"){requireRole(user,"admin");const b=await bodyJson(req);if(!b.key||typeof b.value!=="string")return json({error:"Ongeldige instelling."},400);await env.DB.prepare("INSERT INTO app_settings(setting_key,setting_value,updated_by) VALUES(?,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").bind(clean(b.key,100),b.value.slice(0,4000),user.id).run();return json({ok:true})}
+ 
+ if(path==="/api/teams"&&method==="GET"){
+  let rows;
+  if(user.role==="admin")rows=await env.DB.prepare("SELECT * FROM teams WHERE active=1 ORDER BY campus,name").all();
+  else if(user.role==="staff")rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE tm.user_id=? AND t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
+  else rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN buyer_assignments ba ON ba.user_id=? AND (ba.team_id=t.id OR ba.team_id IS NULL) AND (ba.campus=t.campus OR ba.campus IS NULL) WHERE t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
+  return json({teams:rows.results||[]});
+ }
+ if(path==="/api/teams"&&method==="POST"){
+  requireRole(user,"admin");const b=await bodyJson(req),name=clean(b.name,120),campus=clean(b.campus,40);
+  if(!name||!["Ninove","Zottegem","Beide campussen"].includes(campus))return json({error:"Vul een teamnaam en geldige campus in."},400);
+  const id=crypto.randomUUID();try{await env.DB.prepare("INSERT INTO teams(id,name,campus,description) VALUES(?,?,?,?)").bind(id,name,campus,clean(b.description,1000)).run()}catch(e){if(/unique/i.test(e.message))return json({error:"Deze teamnaam bestaat al."},409);throw e}
+  await env.DB.prepare("INSERT INTO order_events(id,order_id,actor_id,event_type,message) SELECT ?,o.id,?,'team_created',? FROM orders o WHERE 1=0").bind(crypto.randomUUID(),user.id,"Team aangemaakt").run();
+  return json({id},201);
+ }
+ m=path.match(/^\/api\/teams\/([^/]+)$/);
+ if(m&&method==="PATCH"){
+  requireRole(user,"admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE teams SET name=COALESCE(?,name),campus=COALESCE(?,campus),description=COALESCE(?,description),active=COALESCE(?,active),updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.name?clean(b.name,120):null,b.campus?clean(b.campus,40):null,Object.prototype.hasOwnProperty.call(b,"description")?clean(b.description,1000):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true});
+ }
+ m=path.match(/^\/api\/teams\/([^/]+)\/members$/);
+ if(m&&method==="GET"){
+  const team=await env.DB.prepare("SELECT id FROM teams WHERE id=?").bind(m[1]).first();if(!team)return json({error:"Team niet gevonden."},404);
+  if(user.role!=="admin"){const member=await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(m[1],user.id).first();if(!member)requireRole(user,"admin")}
+  const rows=await env.DB.prepare("SELECT tm.user_id,tm.member_role,u.email,u.display_name,u.role,u.active FROM team_members tm JOIN users u ON u.id=tm.user_id WHERE tm.team_id=? ORDER BY u.display_name").bind(m[1]).all();return json({members:rows.results||[]});
+ }
+ if(m&&method==="PUT"){
+  requireRole(user,"admin");const b=await bodyJson(req),members=Array.isArray(b.members)?b.members:[];
+  const statements=[env.DB.prepare("DELETE FROM team_members WHERE team_id=?").bind(m[1])];
+  for(const member of members){if(!member.userId)continue;statements.push(env.DB.prepare("INSERT INTO team_members(team_id,user_id,member_role) VALUES(?,?,?)").bind(m[1],member.userId,member.memberRole==="coordinator"?"coordinator":"member"))}
+  await env.DB.batch(statements);return json({ok:true});
+ }
+ m=path.match(/^\/api\/orders\/([^/]+)\/events$/);
+ if(m&&method==="GET"){
+  const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
+  const allowedRead=user.role==="admin"||(user.role==="staff"&&(order.requester_id===user.id||!!(await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first())))||(user.role==="buyer"&&!!(await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?)").bind(user.id,order.campus,order.team_id).first()));
+  if(!allowedRead)requireRole(user,"admin");
+  const rows=await env.DB.prepare("SELECT e.*,u.display_name actor_name FROM order_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.order_id=? ORDER BY e.created_at,e.rowid").bind(m[1]).all();return json({events:rows.results||[]});
+ }
+ m=path.match(/^\/api\/orders\/([^/]+)\/information-requests$/);
+ if(m&&method==="GET"){
+  const rows=await env.DB.prepare("SELECT ir.*,u.display_name requester_name FROM information_requests ir JOIN users u ON u.id=ir.requested_by WHERE ir.order_item_id IN (SELECT id FROM order_items WHERE order_id=?) ORDER BY ir.requested_at").bind(m[1]).all();return json({requests:rows.results||[]});
+ }
+ if(m&&method==="POST"){
+  requireRole(user,"buyer","admin");const b=await bodyJson(req),order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
+  if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=?) AND (team_id IS NULL OR team_id=?)").bind(user.id,order.campus,order.team_id).first())requireRole(user,"admin");
+  const item=await env.DB.prepare("SELECT id FROM order_items WHERE id=? AND order_id=?").bind(b.orderItemId,m[1]).first();if(!item||!clean(b.question,2000))return json({error:"Selecteer een bestelregel en vul de informatievraag in."},400);
+  const id=crypto.randomUUID();await env.DB.batch([env.DB.prepare("INSERT INTO information_requests(id,order_item_id,requested_by,request_text) VALUES(?,?,?,?)").bind(id,item.id,user.id,clean(b.question,2000)),env.DB.prepare("UPDATE orders SET status='info_requested',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(m[1]),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'information_requested',?)").bind(crypto.randomUUID(),m[1],item.id,user.id,clean(b.question,2000))]);return json({id},201);
+ }
+ m=path.match(/^\/api\/information-requests\/([^/]+)\/respond$/);
+ if(m&&method==="POST"){
+  const b=await bodyJson(req),ir=await env.DB.prepare("SELECT ir.*,oi.order_id,o.requester_id,o.team_id FROM information_requests ir JOIN order_items oi ON oi.id=ir.order_item_id JOIN orders o ON o.id=oi.order_id WHERE ir.id=?").bind(m[1]).first();if(!ir)return json({error:"Informatieverzoek niet gevonden."},404);
+  const member=ir.team_id?await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(ir.team_id,user.id).first():null;
+  if(user.role!=="admin"&&ir.requester_id!==user.id&&!member)requireRole(user,"admin");
+  const answer=clean(b.answer,3000);if(!answer)return json({error:"Vul een antwoord in."},400);
+  await env.DB.batch([env.DB.prepare("UPDATE information_requests SET response_text=?,responded_at=CURRENT_TIMESTAMP WHERE id=?").bind(answer,m[1]),env.DB.prepare("UPDATE orders SET status='more_info_received',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(ir.order_id),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'information_responded',?)").bind(crypto.randomUUID(),ir.order_id,ir.order_item_id,user.id,answer)]);return json({ok:true});
+ }
+ if(path==="/api/suppliers"&&method==="GET"){
+  const rows=await env.DB.prepare("SELECT id,enterprise_number,vat_number,name,street,house_number,box,zipcode,municipality,country,phone,email,website,image_url,source,kbo_snapshot_date FROM suppliers ORDER BY name").all();return json({suppliers:rows.results||[]});
+ }
+ if(path==="/api/suppliers"&&method==="POST"){
+  requireRole(user,"buyer","admin");const b=await bodyJson(req),name=clean(b.name,180),enterprise=clean(b.enterpriseNumber,20).replace(/[^0-9]/g,"");if(!name)return json({error:"Bedrijfsnaam ontbreekt."},400);
+  if(enterprise){const duplicate=await env.DB.prepare("SELECT id FROM suppliers WHERE enterprise_number=?").bind(enterprise).first();if(duplicate)return json({error:"Dit ondernemingsnummer bestaat al."},409)}
+  const id=crypto.randomUUID();await env.DB.prepare("INSERT INTO suppliers(id,enterprise_number,vat_number,name,street,house_number,box,zipcode,municipality,country,phone,email,website,source,kbo_snapshot_date) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,enterprise||null,clean(b.vatNumber,30)||null,name,clean(b.street,180)||null,clean(b.houseNumber,20)||null,clean(b.box,20)||null,clean(b.zipcode,20)||null,clean(b.municipality,100)||null,clean(b.country,60)||"België",clean(b.phone,50)||null,clean(b.email,180)||null,clean(b.website,250)||null,clean(b.source,30)||"manual",b.kboSnapshotDate||null).run();return json({id},201);
+ }
+ m=path.match(/^\/api\/suppliers\/([^/]+)$/);
+ if(m&&method==="PATCH"){
+  requireRole(user,"buyer","admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE suppliers SET name=COALESCE(?,name),enterprise_number=COALESCE(?,enterprise_number),vat_number=COALESCE(?,vat_number),street=COALESCE(?,street),house_number=COALESCE(?,house_number),box=COALESCE(?,box),zipcode=COALESCE(?,zipcode),municipality=COALESCE(?,municipality),phone=COALESCE(?,phone),email=COALESCE(?,email),website=COALESCE(?,website) WHERE id=?").bind(b.name?clean(b.name,180):null,b.enterpriseNumber?clean(b.enterpriseNumber,20):null,b.vatNumber?clean(b.vatNumber,30):null,b.street?clean(b.street,180):null,b.houseNumber?clean(b.houseNumber,20):null,b.box?clean(b.box,20):null,b.zipcode?clean(b.zipcode,20):null,b.municipality?clean(b.municipality,100):null,b.phone?clean(b.phone,50):null,b.email?clean(b.email,180):null,b.website?clean(b.website,250):null,m[1]).run();return json({ok:true});
+ }
  return json({error:"API-route niet gevonden."},404);
 }
 export default {
