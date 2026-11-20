@@ -62,70 +62,44 @@ function b64(bytes) {
   return btoa(binary);
 }
 async function importImage(req, env) {
-  if (!env.IMAGE_ADMIN_TOKEN || req.headers.get("authorization") !== "Bearer " + env.IMAGE_ADMIN_TOKEN) {
-    return json({ error: "Niet gemachtigd." }, 401);
-  }
-  if (!env.GITHUB_TOKEN || !env.GITHUB_REPOSITORY || !env.DB) {
-    return json({ error: "Afbeeldingenopslag is nog niet volledig geconfigureerd." }, 503);
+  const user=await authenticate(req,env);requireRole(user,"buyer","admin");
+  if ((!env.IMAGES && (!env.GITHUB_TOKEN || !env.GITHUB_REPOSITORY)) || !env.DB) {
+    return json({ error: "Configureer een Cloudflare R2-bucket (IMAGES) of de bestaande GitHub-opslag." }, 503);
   }
   const body = await req.json();
   const kind = body.kind, entityId = String(body.entityId || "").trim(), query = String(body.query || "").trim();
   if (!["article", "supplier"].includes(kind) || !entityId || !query || query.length > 180) {
     return json({ error: "Geef een geldig type, record-ID en zoekterm op." }, 400);
   }
-  const [owner, repo] = env.GITHUB_REPOSITORY.split("/");
-  if (!owner || !repo) return json({ error: "GITHUB_REPOSITORY moet owner/repository bevatten." }, 503);
-
-  const searchUrl = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(query);
-  const search = await fetch(searchUrl, { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" } });
-  if (!search.ok) return json({ error: "Google Afbeeldingen gaf HTTP " + search.status + "." }, 502);
-  const candidates = imageCandidates(await search.text());
-  if (!candidates.length) return json({ error: "Geen bruikbare afbeeldingsresultaten gevonden. Google kan scraping blokkeren of zijn paginaformaat wijzigen." }, 404);
-
-  let imageResponse = null;
-  for (const candidate of candidates) {
-    try {
-      const u = new URL(candidate);
-      if (!["http:", "https:"].includes(u.protocol) || !u.hostname || u.hostname === "localhost") continue;
-      const r = await fetch(u.toString(), { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" }, redirect: "follow" });
-      const type = (r.headers.get("content-type") || "").split(";")[0].toLowerCase();
-      const length = Number(r.headers.get("content-length") || 0);
-      if (!r.ok || !type.startsWith("image/") || type === "image/svg+xml" || length > 4 * 1024 * 1024) continue;
-      const bytes = new Uint8Array(await r.arrayBuffer());
-      if (!bytes.length || bytes.length > 4 * 1024 * 1024) continue;
-      imageResponse = { bytes, type };
-      break;
-    } catch {}
-  }
-  if (!imageResponse) return json({ error: "De gevonden afbeeldingen konden niet veilig als afbeeldingsbestand worden opgehaald." }, 502);
-
-  const ext = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif" })[imageResponse.type];
-  if (!ext) return json({ error: "Alleen JPEG, PNG, WebP en GIF worden ondersteund." }, 415);
   const safeId = entityId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
   if (!safeId) return json({ error: "Ongeldig record-ID." }, 400);
-  const path = "public/uploads/" + (kind === "article" ? "articles" : "suppliers") + "/" + safeId + "." + ext;
-  const api = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/" + path;
-  const existing = await fetch(api, { headers: { authorization: "Bearer " + env.GITHUB_TOKEN, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" } });
-  let sha;
-  if (existing.ok) sha = (await existing.json()).sha;
-  else if (existing.status !== 404) return json({ error: "GitHub kon de opslaglocatie niet controleren (HTTP " + existing.status + ")." }, 502);
-  const payload = { message: "Store image for " + kind + " " + safeId, content: b64(imageResponse.bytes) };
-  if (sha) payload.sha = sha;
-  const saved = await fetch(api, {
-    method: "PUT",
-    headers: { authorization: "Bearer " + env.GITHUB_TOKEN, accept: "application/vnd.github+json", "content-type": "application/json", "x-github-api-version": "2022-11-28" },
-    body: JSON.stringify(payload)
-  });
-  if (!saved.ok) return json({ error: "GitHub kon de afbeelding niet bewaren (HTTP " + saved.status + "). Controleer de tokenrechten." }, 502);
-  const imageUrl = "https://raw.githubusercontent.com/" + owner + "/" + repo + "/main/" + path;
-  const table = kind === "article" ? "catalog_items" : "suppliers";
-  const result = await env.DB.prepare("UPDATE " + table + " SET image_url = ? WHERE id = ?").bind(imageUrl, safeId).run();
-  if (!result.meta || result.meta.changes === 0) {
-    return json({ error: "Afbeelding is op GitHub opgeslagen, maar het bijbehorende record werd niet gevonden in D1.", imageUrl, path }, 409);
+  const path = "uploads/" + (kind === "article" ? "articles" : "suppliers") + "/" + safeId + "." + ext;
+  let imageUrl,storage;
+  if(env.IMAGES){
+    await env.IMAGES.put(path,imageResponse.bytes,{httpMetadata:{contentType:imageResponse.type,cacheControl:"public, max-age=86400"}});
+    imageUrl=(env.APP_ORIGIN||"").replace(/\/$/,"")+"/api/images/"+path;
+    storage="Cloudflare R2";
+  }else{
+    const [owner, repo] = env.GITHUB_REPOSITORY.split("/");
+    if (!owner || !repo) return json({ error: "GITHUB_REPOSITORY moet owner/repository bevatten." }, 503);
+    const api = "https://api.github.com/repos/" + owner + "/" + repo + "/contents/public/" + path;
+    const existing = await fetch(api, { headers: { authorization: "Bearer " + env.GITHUB_TOKEN, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" } });
+    let sha;
+    if (existing.ok) sha = (await existing.json()).sha;
+    else if (existing.status !== 404) return json({ error: "GitHub kon de opslaglocatie niet controleren (HTTP " + existing.status + ")." }, 502);
+    const payload = { message: "Store image for " + kind + " " + safeId, content: b64(imageResponse.bytes) };
+    if (sha) payload.sha = sha;
+    const saved = await fetch(api, {method:"PUT",headers:{authorization:"Bearer "+env.GITHUB_TOKEN,accept:"application/vnd.github+json","content-type":"application/json","x-github-api-version":"2022-11-28"},body:JSON.stringify(payload)});
+    if (!saved.ok) return json({ error: "GitHub kon de afbeelding niet bewaren (HTTP " + saved.status + ")." }, 502);
+    imageUrl = "https://raw.githubusercontent.com/" + owner + "/" + repo + "/main/public/" + path;
+    storage="GitHub repository";
   }
-  await env.DB.prepare("INSERT INTO image_assets (entity_type, entity_id, repository_path, image_url, content_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(entity_type, entity_id) DO UPDATE SET repository_path=excluded.repository_path, image_url=excluded.image_url, content_type=excluded.content_type, updated_at=CURRENT_TIMESTAMP")
-    .bind(kind, safeId, path, imageUrl, imageResponse.type).run();
-  return json({ ok: true, imageUrl, path, storage: "GitHub repository" });
+  const table = kind === "article" ? "catalog_items" : "suppliers";
+  const result = await env.DB.prepare("UPDATE " + table + " SET image_url = ? WHERE id = ?").bind(imageUrl, entityId).run();
+  if (!result.meta || result.meta.changes === 0) return json({ error: "Afbeelding is opgeslagen, maar het record werd niet gevonden." }, 404);
+  await env.DB.prepare("INSERT INTO image_assets (entity_type, entity_id, repository_path, image_url, content_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(entity_type, entity_id) DO UPDATE SET repository_path=excluded.repository_path, image_url=excluded.image_url, content_type=excluded.content_type, updated_at=CURRENT_TIMESTAMP").bind(kind, entityId, path, imageUrl, imageResponse.type).run();
+  return json({ ok: true, imageUrl, path, storage });
+
 }
 
 function b64url(s){return Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/").padEnd(Math.ceil(s.length/4)*4,"=")),c=>c.charCodeAt(0))}
@@ -324,6 +298,9 @@ export default {
   const headers={"access-control-allow-origin":origin,"access-control-allow-methods":"GET,POST,PATCH,PUT,OPTIONS","access-control-allow-headers":"content-type,authorization","vary":"Origin"};
   if(req.method==="OPTIONS")return new Response(null,{headers});
   if(u.pathname==="/api/health")return json({ok:true,app:env.APP_NAME||"Richtpunt Bestelplatform",cloudflareAccessConfigured:!!(env.CF_ACCESS_TEAM_DOMAIN&&env.CF_ACCESS_AUD),databaseConfigured:!!env.DB,kboConfigured:!!(env.KBO_USERNAME&&env.KBO_PASSWORD&&env.KBO_ENDPOINT)});
+  if(u.pathname.startsWith("/api/images/")&&req.method==="GET"&&u.pathname!=="/api/images/import"){
+    try{if(!env.IMAGES)return json({error:"R2-afbeeldingenopslag is niet geconfigureerd."},503);const viewer=await authenticate(req,env);if(!viewer.active)return json({error:"Niet gemachtigd."},403);const key=decodeURIComponent(u.pathname.slice("/api/images/".length));if(!key||key.includes(".."))return json({error:"Ongeldig afbeeldingspad."},400);const object=await env.IMAGES.get(key);if(!object)return json({error:"Afbeelding niet gevonden."},404);return new Response(object.body,{headers:{"content-type":object.httpMetadata?.contentType||"application/octet-stream","cache-control":"private, max-age=3600","x-content-type-options":"nosniff"}})}catch(e){return json({error:e.message||"Afbeelding ophalen mislukt."},e.status||500)}
+  }
   if(u.pathname==="/api/images/import"&&req.method==="POST"){try{return await importImage(req,env)}catch(e){return json({error:e.message||"Afbeeldingsimport mislukt."},500)}}
   if(u.pathname==="/api/kbo/search"&&req.method==="GET"){try{if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);const kboUser=await authenticate(req,env);requireRole(kboUser,"buyer","admin");const terms=(u.searchParams.get("q")||"").trim().split(/\s+/).filter(Boolean).slice(0,10);if(!terms.length)return json({results:[]});const parts=terms.map(t=>"<mes:Phoneme>"+esc(t)+"</mes:Phoneme>").join("");const xml=await kbo(env,"<mes:ReadEnterpriseByPhonemeRequest>"+parts+"<mes:TypeOfEnterprise>ELP</mes:TypeOfEnterprise><mes:ActiveFilter>true</mes:ActiveFilter></mes:ReadEnterpriseByPhonemeRequest>");return json(parseKboResults(xml))}catch(e){return json({error:e.message},503)}}
   if(u.pathname.startsWith("/api/")){if(!env.DB)return json({error:"D1-databasebinding ontbreekt."},503);try{const user=await authenticate(req,env);const response=await api(req,env,user,u);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}catch(e){const response=json({error:e.message||"Interne API-fout."},e.status||500);const safeHeaders=new Headers(response.headers);safeHeaders.set("access-control-allow-origin",env.APP_ORIGIN||"null");safeHeaders.set("vary","Origin");return new Response(response.body,{status:response.status,statusText:response.statusText,headers:safeHeaders})}}
