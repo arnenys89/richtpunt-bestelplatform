@@ -123,7 +123,7 @@ async function importImage(req, env) {
   const table = kind === "article" ? "catalog_items" : "suppliers";
   const result = await env.DB.prepare("UPDATE " + table + " SET image_url = ? WHERE id = ?").bind(imageUrl, entityId).run();
   if (!result.meta || result.meta.changes === 0) return json({ error: "Afbeelding is opgeslagen, maar het record werd niet gevonden." }, 404);
-  await env.DB.prepare("INSERT INTO image_assets (entity_type, entity_id, repository_path, image_url, content_type) VALUES (?, ?, ?, ?, ?) ON CONFLICT(entity_type, entity_id) DO UPDATE SET repository_path=excluded.repository_path, image_url=excluded.image_url, content_type=excluded.content_type, updated_at=CURRENT_TIMESTAMP").bind(kind, entityId, path, imageUrl, imageResponse.type).run();
+  await env.DB.prepare("INSERT INTO image_assets (entity_type, entity_id, repository_path, image_url, source_url, content_type) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(entity_type, entity_id) DO UPDATE SET repository_path=excluded.repository_path, image_url=excluded.image_url, source_url=excluded.source_url, content_type=excluded.content_type, updated_at=CURRENT_TIMESTAMP").bind(kind, entityId, path, imageUrl, imageResponse.sourceUrl, imageResponse.type).run();
   return json({ ok: true, imageUrl, path, storage });
 
 }
