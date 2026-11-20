@@ -16,3 +16,8 @@
 .assignment-editor .form-row{display:flex;gap:8px;align-items:center;margin:10px 0}
 .assignment-editor .item{margin:6px 0}
 .assignment-editor small{display:block;margin-top:6px;color:#666}
+
+.article-thumb{display:block;max-width:160px;max-height:110px;object-fit:contain;margin:8px 0;border-radius:6px;background:#f7f7f4}
+.supplier-image-editor{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.supplier-image-editor input{max-width:280px}
+.supplier-image-editor small{flex-basis:100%;color:#666}
