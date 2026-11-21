@@ -215,6 +215,12 @@ async function syncOrderStatus(env,orderId){
  const status=counts.delivered===counts.total?"delivered":(counts.delivered>0||counts.partial>0)?"partially_delivered":counts.ordered>0?"ordered":null;
  if(status)await env.DB.prepare("UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status,orderId).run();
 }
+async function configuredCampuses(env){
+ const row=await env.DB.prepare("SELECT setting_value FROM app_settings WHERE setting_key='campuses'").first();
+ try{const value=JSON.parse(row?.setting_value||"[]");if(Array.isArray(value)&&value.length)return [...new Set(value.map(x=>clean(x,40)).filter(Boolean))]}catch{}
+ return ["Ninove","Zottegem"];
+}
+async function isConfiguredCampus(env,value){return value==="Beide campussen"||(await configuredCampuses(env)).includes(String(value||""))}
 async function buyerCanAccessOrder(env,userId,order){
  const row=await env.DB.prepare("SELECT 1 FROM buyer_assignments ba WHERE ba.user_id=? AND (ba.campus IS NULL OR ba.campus=? OR ba.campus='Beide campussen') AND (ba.team_id IS NULL OR ba.team_id=?) AND NOT EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND NOT EXISTS (SELECT 1 FROM buyer_assignments ba2 WHERE ba2.user_id=ba.user_id AND (ba2.campus IS NULL OR ba2.campus=? OR ba2.campus='Beide campussen') AND (ba2.team_id IS NULL OR ba2.team_id=?) AND (ba2.category IS NULL OR ba2.category=ci.category)))").bind(userId,order.campus,order.team_id,order.id,order.campus,order.team_id).first();
  return !!row;
@@ -242,9 +248,9 @@ async function api(req,env,user,url){
  }
  if(path==="/api/orders"&&method==="POST"){
   const b=await bodyJson(req),title=clean(b.title,180),items=Array.isArray(b.items)?b.items:[];
-  if(!title||!["Ninove","Zottegem","Beide campussen"].includes(b.campus)||!items.length||items.length>100)return json({error:"Controleer titel, campus en bestelregels."},400);
+  if(!title||!(await isConfiguredCampus(env,b.campus))||!items.length||items.length>100)return json({error:"Controleer titel, campus en bestelregels."},400);
   if(!b.teamId)return json({error:"Selecteer het team waarvoor je bestelt."},400);
-  const team=await env.DB.prepare("SELECT id,campus FROM teams WHERE id=? AND active=1").bind(b.teamId).first();
+  const team=await env.DB.prepare("SELECT id,COALESCE(custom_campus,campus) campus FROM teams WHERE id=? AND active=1").bind(b.teamId).first();
   if(!team||!(team.campus===b.campus||team.campus==="Beide campussen"||b.campus==="Beide campussen"))return json({error:"Dit team hoort niet bij de gekozen campus."},400);
   if(user.role==="staff"&&user.campus&&user.campus!=="Beide campussen"&&user.campus!==b.campus)return json({error:"Je account is niet aan deze campus toegewezen."},403);
   if(user.role==="staff"){const member=await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(b.teamId,user.id).first();if(!member)return json({error:"Je bent geen lid van het geselecteerde team."},403)}
@@ -330,8 +336,8 @@ async function api(req,env,user,url){
  
  if(path==="/api/teams"&&method==="GET"){
   let rows;
-  if(user.role==="admin")rows=await env.DB.prepare("SELECT * FROM teams WHERE active=1 ORDER BY campus,name").all();
-  else if(user.role==="staff")rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE tm.user_id=? AND t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
+  if(user.role==="admin")rows=await env.DB.prepare("SELECT id,name,COALESCE(custom_campus,campus) campus,description,active,created_at,updated_at FROM teams WHERE active=1 ORDER BY campus,name").all();
+  else if(user.role==="staff")rows=await env.DB.prepare("SELECT DISTINCT t.id,t.name,COALESCE(t.custom_campus,t.campus) campus,t.description,t.active,t.created_at,t.updated_at FROM teams t JOIN team_members tm ON tm.team_id=t.id WHERE tm.user_id=? AND t.active=1 ORDER BY campus,t.name").bind(user.id).all();
   else rows=await env.DB.prepare("SELECT DISTINCT t.* FROM teams t JOIN buyer_assignments ba ON ba.user_id=? AND (ba.team_id=t.id OR ba.team_id IS NULL) AND (ba.campus=t.campus OR ba.campus IS NULL OR ba.campus='Beide campussen' OR t.campus='Beide campussen') WHERE t.active=1 ORDER BY t.campus,t.name").bind(user.id).all();
   return json({teams:rows.results||[]});
  }
