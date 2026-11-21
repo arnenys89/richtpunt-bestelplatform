@@ -11,7 +11,7 @@ Laatste codecontrole: 21 november 2026. Dit document maakt onderscheid tussen co
 | Rollen en gebruikersbeheer | Aanwezig | Aanvrager, aankoper, beheerder, campus en actieve status. |
 | Teams en teamleden | Aanwezig | Meerdere teams per gebruiker; meerdere leden en coördinatoren per team; zelf ingestelde campussen ondersteund. |
 | Coördinatorrol | Gedeeltelijk | Rol kan toegewezen en bewaard worden; er is nog geen afzonderlijke autorisatiematrix voor coördinatoren. |
-| Aankopersrechten | Gedeeltelijk | Campus/team/categorie-toewijzingen; gemengde bestellingen worden alleen zichtbaar wanneer alle regels binnen de toewijzing vallen. Volledige matrix vraagt nog acceptatietests met echte accounts. |
+| Aankopersrechten | Aanwezig in code | Toewijzingen per campus, team en categorie; gemengde bestellingen worden alleen zichtbaar wanneer alle regels binnen de toewijzing vallen. Volledige matrix vraagt nog acceptatietests met echte accounts. |
 | Bestellingen en bestelregels | Aanwezig | Team, campus, titel, motivatie, algemene opmerkingen, aantal, eenheid en verplichte verantwoording. |
 | Leveranciersvoorstellen | Aanwezig | Maximaal drie per bestelregel. |
 | Statusworkflow | Gedeeltelijk | Server valideert toegestane overgangen; uitzonderings- en herstelprocessen moeten nog door gebruikers worden geaccepteerd. |
@@ -21,12 +21,12 @@ Laatste codecontrole: 21 november 2026. Dit document maakt onderscheid tussen co
 | Artikelenbibliotheek | Aanwezig | EAN-13-validatie en uniciteit, categorie, omschrijving, specificaties, eenheid, afbeelding en leverancierskoppelingen. |
 | Zoeken artikelen | Aanwezig | Zoeken op naam, EAN en categorie (categorie via zoekveld). |
 | Historische artikelgegevens | Aanwezig voor nieuwe bestellingen | EAN en afbeeldings-URL worden als snapshot op de bestelregel opgeslagen. Bestaande regels zijn waar mogelijk aangevuld vanuit de huidige artikelfiche. |
-| Leveranciersbibliotheek | Aanwezig | Handmatig beheer, unieke Belgische ondernemingsnummers, KBO-zoekresultaten en expliciete toevoeging. |
+| Leveranciersbibliotheek | Aanwezig | Handmatig beheer, unieke Belgische ondernemingsnummers, KBO-zoekresultaten, expliciete toevoeging en gekoppelde artikelen op de leveranciersfiche. |
 | KBO-verbinding | Configuratie geblokkeerd | Productiesecrets KBO_USERNAME en KBO_PASSWORD ontbreken nog; KBO-endpoint is ingesteld. |
 | Aankoopregister | Aanwezig | Leverancier, bestelbonnummer, besteldatum, status en opmerkingen; geen bedragen of facturen. |
 | Filters aankoopregister | Aanwezig | Status, leverancier, campus, team en datumperiode. |
 | Meerdere deelleveringen | Aanwezig | Afzonderlijke leveringsrecords met aantal, datum en opmerking; server controleert dat totaal niet boven bestelde hoeveelheid uitkomt. |
-| Afbeeldingen kiezen | Aanwezig | Zoekresultaten worden eerst als voorstellen getoond; gebruiker bevestigt expliciet de gekozen afbeelding. |
+| Afbeeldingen kiezen | Aanwezig | Zoekresultaten worden eerst als voorstellen getoond; gebruiker kiest zelf en bevestigt via een gebruiksrechtenverklaring. Bron-URL en bevestigingsstatus worden in D1 bewaard. |
 | Afbeeldingenopslag | Gedeeltelijk getest | R2-binding is geconfigureerd; volledige productiepraktijktest met echte afbeeldingen moet nog gebeuren. |
 | Centrale instellingen | Aanwezig | Campussen, categorieën en herbestelvoorkeur worden in D1 bewaard; aangepaste campussen worden ondersteund via custom_campus zonder de bestaande teamsleutel te breken. Verwijderen van gebruikte campussen wordt geblokkeerd. |
 | Centrale Google-/Microsoft-/Smartschool-aanmelding | Niet afzonderlijk in de applicatie | De functionele blauwdruk gebruikt Cloudflare Access als identiteitslaag. De gewenste gemeenschappelijke login hangt af van de Identity Provider-configuratie in Cloudflare Access. |
@@ -65,7 +65,10 @@ Migratie 006 voegt leveringshistoriek en historische EAN-/afbeeldingssnapshots t
 - Teamleden kunnen ook de aankoop- en leveringshistoriek van hun eigen team lezen.
 - Zelf ingestelde campussen werken door in teams, gebruikers, bestellingen en aankopersrechten.
 - Het totaal van geregistreerde leveringen kan server-side de bestelde hoeveelheid niet overschrijden.
-- Afbeeldingen worden eerst als voorstellen getoond en pas na expliciete keuze opgeslagen.
+- Afbeeldingen worden eerst als voorstellen getoond en pas na expliciete keuze én gebruiksrechtenbevestiging opgeslagen.
+- De aankopersmatrix ondersteunt nu campus-, team- en categoriebeperkingen.
+- Leveranciersfiches tonen de gekoppelde artikelen.
+- Teamleden kunnen de aankoop- en leveringshistoriek van hun team raadplegen.
 - Aankoopregister bevat filters voor campus en team.
 
 ## Nog te doen vóór volledige ingebruikname
@@ -77,8 +80,7 @@ Migratie 006 voegt leveringshistoriek en historische EAN-/afbeeldingssnapshots t
 5. Voer een volledige R2-upload-, lees- en afbeeldingsselectietest uit.
 6. Test meerdere opeenvolgende deelleveringen en de automatische status van bestelregel en bestelling.
 7. Beslis of coördinatoren extra rechten moeten krijgen bovenop gewone teamleden.
-8. Werk dynamische campusvalidatie en het teamschema af als er naast Ninove en Zottegem extra campussen moeten worden ondersteund.
-9. Doorloop de volledige acceptatielijst uit `FUNCTIONELE-BLAUWDRUK.md` op productie.
+8. Doorloop de volledige acceptatielijst uit `FUNCTIONELE-BLAUWDRUK.md` op productie.
 
 ## Belangrijke beperking
 
