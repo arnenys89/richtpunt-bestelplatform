@@ -64,3 +64,5 @@
 .order-line-image{width:64px;height:64px;object-fit:contain;border:1px solid #eee;border-radius:6px;background:#fff;padding:3px;flex:0 0 64px}
 
 .supplier-articles{margin:12px 0;padding:10px;background:#faf9f4;border:1px solid #e8e6dd;border-radius:7px;font-size:11px}.supplier-articles>b{display:block;margin-bottom:7px}.supplier-article{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #e9e7df}.supplier-article img{width:34px;height:34px;object-fit:contain;border-radius:4px;background:#fff}.supplier-article small{display:block;color:#777;margin-top:3px}
+
+.license-confirm{display:flex!important;align-items:flex-start;gap:8px;padding:10px 12px;background:#fbf5dc;border:1px solid #e9dba4;border-radius:6px;font-size:11px!important;color:#594800!important;margin:12px 0!important}.license-confirm input{width:auto!important;margin:1px 0 0!important;flex:0 0 auto}
