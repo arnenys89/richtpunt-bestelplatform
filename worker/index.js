@@ -326,6 +326,7 @@ async function api(req,env,user,url){
    return json({ok:true,protectedSuperadmin:true});
   }
   if(!["staff","buyer","admin"].includes(b.role))return json({error:"Ongeldige rol."},400);
+  if(b.campus&&!(await isConfiguredCampus(env,b.campus)))return json({error:"Deze campus is niet geconfigureerd."},400);
   await env.DB.prepare("UPDATE users SET role=?,campus=?,active=? WHERE id=?").bind(b.role,clean(b.campus,100)||null,b.active===false?0:1,uid).run();
   return json({ok:true});
  }
