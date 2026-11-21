@@ -330,7 +330,7 @@ async function api(req,env,user,url){
  }
  m=path.match(/^\/api\/users\/([^/]+)\/assignments$/);
  if(m&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT campus,category,team_id FROM buyer_assignments WHERE user_id=? ORDER BY campus,category").bind(m[1]).all();return json({assignments:rows.results||[]})}
- if(m&&method==="PUT"){requireRole(user,"admin");const b=await bodyJson(req),assignments=Array.isArray(b.assignments)?b.assignments:[];const statements=[env.DB.prepare("DELETE FROM buyer_assignments WHERE user_id=?").bind(m[1])];for(const a of assignments){const campus=clean(a.campus,40),category=clean(a.category,100);if(!["Ninove","Zottegem","Beide campussen"].includes(campus)||!category)continue;statements.push(env.DB.prepare("INSERT INTO buyer_assignments(user_id,campus,category,team_id) VALUES(?,?,?,?)").bind(m[1],campus,category,a.teamId||null))}await env.DB.batch(statements);return json({ok:true})}
+ if(m&&method==="PUT"){requireRole(user,"admin");const b=await bodyJson(req),assignments=Array.isArray(b.assignments)?b.assignments:[];const statements=[env.DB.prepare("DELETE FROM buyer_assignments WHERE user_id=?").bind(m[1])];for(const a of assignments){const campus=clean(a.campus,40),category=clean(a.category,100);if(!(await isConfiguredCampus(env,campus))||!category)continue;statements.push(env.DB.prepare("INSERT INTO buyer_assignments(user_id,campus,category,team_id) VALUES(?,?,?,?)").bind(m[1],campus,category,a.teamId||null))}await env.DB.batch(statements);return json({ok:true})}
  if(path==="/api/settings"&&method==="GET"){const rows=await env.DB.prepare("SELECT setting_key,setting_value FROM app_settings ORDER BY setting_key").all();return json({settings:rows.results||[]})}
  if(path==="/api/settings"&&method==="PUT"){requireRole(user,"admin");const b=await bodyJson(req);if(!b.key||typeof b.value!=="string")return json({error:"Ongeldige instelling."},400);await env.DB.prepare("INSERT INTO app_settings(setting_key,setting_value,updated_by) VALUES(?,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").bind(clean(b.key,100),b.value.slice(0,4000),user.id).run();return json({ok:true})}
  
@@ -343,13 +343,17 @@ async function api(req,env,user,url){
  }
  if(path==="/api/teams"&&method==="POST"){
   requireRole(user,"admin");const b=await bodyJson(req),name=clean(b.name,120),campus=clean(b.campus,40);
-  if(!name||!["Ninove","Zottegem","Beide campussen"].includes(campus))return json({error:"Vul een teamnaam en geldige campus in."},400);
-  const id=crypto.randomUUID();try{await env.DB.prepare("INSERT INTO teams(id,name,campus,description) VALUES(?,?,?,?)").bind(id,name,campus,clean(b.description,1000)).run()}catch(e){if(/unique/i.test(e.message))return json({error:"Deze teamnaam bestaat al."},409);throw e}
+  if(!name||!(await isConfiguredCampus(env,campus)))return json({error:"Vul een teamnaam en geldige campus in."},400);
+  const fixed=["Ninove","Zottegem","Beide campussen"].includes(campus),storedCampus=fixed?campus:"Beide campussen";
+  const id=crypto.randomUUID();try{await env.DB.prepare("INSERT INTO teams(id,name,campus,custom_campus,description) VALUES(?,?,?,?,?)").bind(id,name,storedCampus,fixed?null:campus,clean(b.description,1000)).run()}catch(e){if(/unique/i.test(e.message))return json({error:"Deze teamnaam bestaat al."},409);throw e}
   return json({id},201);
  }
  m=path.match(/^\/api\/teams\/([^/]+)$/);
  if(m&&method==="PATCH"){
-  requireRole(user,"admin");const b=await bodyJson(req);await env.DB.prepare("UPDATE teams SET name=COALESCE(?,name),campus=COALESCE(?,campus),description=COALESCE(?,description),active=COALESCE(?,active),updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.name?clean(b.name,120):null,b.campus?clean(b.campus,40):null,Object.prototype.hasOwnProperty.call(b,"description")?clean(b.description,1000):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true});
+  requireRole(user,"admin");const b=await bodyJson(req),hasCampus=Object.prototype.hasOwnProperty.call(b,"campus"),campus=hasCampus?clean(b.campus,40):null;
+  if(hasCampus&&!(await isConfiguredCampus(env,campus)))return json({error:"Deze campus is niet geconfigureerd."},400);
+  const fixedCampus=campus&&["Ninove","Zottegem","Beide campussen"].includes(campus),storedCampus=campus?(fixedCampus?campus:"Beide campussen"):null,customCampus=campus&&!fixedCampus?campus:null;
+  await env.DB.prepare("UPDATE teams SET name=COALESCE(?,name),campus=COALESCE(?,campus),custom_campus=CASE WHEN ?=1 THEN ? ELSE custom_campus END,description=COALESCE(?,description),active=COALESCE(?,active),updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.name?clean(b.name,120):null,storedCampus,hasCampus?1:0,customCampus,Object.prototype.hasOwnProperty.call(b,"description")?clean(b.description,1000):null,typeof b.active==="boolean"?(b.active?1:0):null,m[1]).run();return json({ok:true});
  }
  m=path.match(/^\/api\/teams\/([^/]+)\/members$/);
  if(m&&method==="GET"){
