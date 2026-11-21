@@ -97,7 +97,7 @@ async function importImage(req, env) {
     } catch {}
   }
   if (!imageResponse) return json({ error: "De gevonden afbeeldingen konden niet veilig worden opgehaald." }, 502);
-  const ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp","image/gif":"gif"})[imageResponse.type];
+  const ext=({"image/jpeg":"jpg","image/png":"png","image/webp":"webp"})[imageResponse.type];
   if(!ext)return json({error:"Alleen JPEG, PNG, WebP en GIF worden ondersteund."},415);
   const safeId = entityId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
   if (!safeId) return json({ error: "Ongeldig record-ID." }, 400);
