@@ -71,11 +71,11 @@ async function importImage(req, env) {
   if (!["article", "supplier"].includes(kind) || !entityId || !query || query.length > 180) {
     return json({ error: "Geef een geldig type, record-ID en zoekterm op." }, 400);
   }
-  const searchUrl = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(query);
-  const search = await fetch(searchUrl, { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" } });
-  if (!search.ok) return json({ error: "Google Afbeeldingen gaf HTTP " + search.status + "." }, 502);
-  const candidates = imageCandidates(await search.text());
+  let candidates=[];
+  if(body.sourceUrl){candidates=[String(body.sourceUrl)];}
+  else{const searchUrl = "https://www.google.com/search?tbm=isch&q=" + encodeURIComponent(query);const search = await fetch(searchUrl, { headers: { "user-agent": "Mozilla/5.0 (compatible; RichtpuntBestelplatform/1.0)" } });if (!search.ok) return json({ error: "Google Afbeeldingen gaf HTTP " + search.status + "." }, 502);candidates=imageCandidates(await search.text());}
   if (!candidates.length) return json({ error: "Geen bruikbare afbeeldingsresultaten gevonden." }, 404);
+  if(body.preview===true)return json({candidates:candidates.slice(0,8)});
   let imageResponse = null;
   for (const candidate of candidates) {
     try {
