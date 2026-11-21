@@ -215,6 +215,10 @@ async function syncOrderStatus(env,orderId){
  const status=counts.delivered===counts.total?"delivered":(counts.delivered>0||counts.partial>0)?"partially_delivered":counts.ordered>0?"ordered":null;
  if(status)await env.DB.prepare("UPDATE orders SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status,orderId).run();
 }
+async function buyerCanAccessOrder(env,userId,order){
+ const row=await env.DB.prepare("SELECT 1 FROM buyer_assignments ba WHERE ba.user_id=? AND (ba.campus IS NULL OR ba.campus=? OR ba.campus='Beide campussen') AND (ba.team_id IS NULL OR ba.team_id=?) AND NOT EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND NOT EXISTS (SELECT 1 FROM buyer_assignments ba2 WHERE ba2.user_id=ba.user_id AND (ba2.campus IS NULL OR ba2.campus=? OR ba2.campus='Beide campussen') AND (ba2.team_id IS NULL OR ba2.team_id=?) AND (ba2.category IS NULL OR ba2.category=ci.category)))").bind(userId,order.campus,order.team_id,order.id,order.campus,order.team_id).first();
+ return !!row;
+}
 async function api(req,env,user,url){
  const path=url.pathname,method=req.method;
  if(path==="/api/me"&&method==="GET")return json({user});
@@ -262,7 +266,7 @@ async function api(req,env,user,url){
  if(m&&method==="PATCH"){
   const b=await bodyJson(req);const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
   if(user.role==="staff"&&(order.requester_id!==user.id&&!await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first()))requireRole(user,"admin");
-  if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments ba WHERE ba.user_id=? AND (ba.campus IS NULL OR ba.campus=? OR ba.campus='Beide campussen') AND (ba.team_id IS NULL OR ba.team_id=?) AND (ba.category IS NULL OR EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND ci.category=ba.category))").bind(user.id,order.campus,order.team_id,order.id).first())requireRole(user,"admin");
+  if(user.role==="buyer"&&!await buyerCanAccessOrder(env,user.id,order))requireRole(user,"admin");
   const allowed=["submitted","in_review","info_requested","more_info_received","approved","rejected","ordered","partially_delivered","delivered","cancelled"];
   if(!allowed.includes(b.status))return json({error:"Ongeldige bestelstatus."},400);
   if(user.role==="staff"&&(b.status!=="cancelled"||!["submitted","in_review"].includes(order.status)||order.requester_id!==user.id))requireRole(user,"admin");
@@ -356,7 +360,7 @@ async function api(req,env,user,url){
  m=path.match(/^\/api\/orders\/([^/]+)\/events$/);
  if(m&&method==="GET"){
   const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
-  const allowedRead=user.role==="admin"||(user.role==="staff"&&(order.requester_id===user.id||!!(await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first())))||(user.role==="buyer"&&!!(await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=? OR campus='Beide campussen') AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND ci.category=ba.category))").bind(user.id,order.campus,order.team_id,order.id).first()));
+  const allowedRead=user.role==="admin"||(user.role==="staff"&&(order.requester_id===user.id||!!(await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first())))||(user.role==="buyer"&&await buyerCanAccessOrder(env,user.id,order));
   if(!allowedRead)requireRole(user,"admin");
   const rows=await env.DB.prepare("SELECT e.*,u.display_name actor_name FROM order_events e LEFT JOIN users u ON u.id=e.actor_id WHERE e.order_id=? ORDER BY e.created_at,e.rowid").bind(m[1]).all();return json({events:rows.results||[]});
  }
@@ -364,7 +368,7 @@ async function api(req,env,user,url){
  if(m&&method==="GET"){
   const order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(m[1]).first();if(!order)return json({error:"Bestelling niet gevonden."},404);
   const member=order.team_id?await env.DB.prepare("SELECT 1 FROM team_members WHERE team_id=? AND user_id=?").bind(order.team_id,user.id).first():null;
-  const assignment=user.role==="buyer"?await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=? OR campus='Beide campussen') AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR EXISTS (SELECT 1 FROM order_items oi LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.order_id=? AND ci.category=ba.category))").bind(user.id,order.campus,order.team_id,order.id).first():null;
+  const assignment=user.role==="buyer"?await buyerCanAccessOrder(env,user.id,order):false;
   if(user.role!=="admin"&&!(user.role==="staff"&&(order.requester_id===user.id||member))&&!(user.role==="buyer"&&assignment))requireRole(user,"admin");
   const rows=await env.DB.prepare("SELECT ir.*,u.display_name requester_name FROM information_requests ir JOIN users u ON u.id=ir.requested_by WHERE ir.order_item_id IN (SELECT id FROM order_items WHERE order_id=?) ORDER BY ir.requested_at").bind(m[1]).all();return json({requests:rows.results||[]});
  }
