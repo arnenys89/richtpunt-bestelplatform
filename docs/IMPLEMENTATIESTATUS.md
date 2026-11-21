@@ -9,15 +9,15 @@ Laatste codecontrole: 21 november 2026. Dit document maakt onderscheid tussen co
 | Cloudflare Access-authenticatie | Aanwezig | JWT-validatie server-side; accounts worden bij eerste aanmelding aangemaakt. |
 | Superadmin Arne Nys | Aanwezig | Exacte geverifieerde identiteit arne.nys@ptiz.be wordt server-side beschermd als actieve admin. |
 | Rollen en gebruikersbeheer | Aanwezig | Aanvrager, aankoper, beheerder, campus en actieve status. |
-| Teams en teamleden | Aanwezig | Meerdere teams per gebruiker; meerdere leden en coördinatoren per team. |
+| Teams en teamleden | Aanwezig | Meerdere teams per gebruiker; meerdere leden en coördinatoren per team; zelf ingestelde campussen ondersteund. |
 | Coördinatorrol | Gedeeltelijk | Rol kan toegewezen en bewaard worden; er is nog geen afzonderlijke autorisatiematrix voor coördinatoren. |
-| Aankopersrechten | Gedeeltelijk | Campus/team/categorie-toewijzingen en server-side controles; volledige matrix vraagt nog acceptatietests met echte accounts. |
+| Aankopersrechten | Gedeeltelijk | Campus/team/categorie-toewijzingen; gemengde bestellingen worden alleen zichtbaar wanneer alle regels binnen de toewijzing vallen. Volledige matrix vraagt nog acceptatietests met echte accounts. |
 | Bestellingen en bestelregels | Aanwezig | Team, campus, titel, motivatie, algemene opmerkingen, aantal, eenheid en verplichte verantwoording. |
 | Leveranciersvoorstellen | Aanwezig | Maximaal drie per bestelregel. |
 | Statusworkflow | Gedeeltelijk | Server valideert toegestane overgangen; uitzonderings- en herstelprocessen moeten nog door gebruikers worden geaccepteerd. |
 | Annuleren door aanvrager | Aanwezig | Alleen eigen aanvraag en alleen in vroege statussen. |
 | Informatieverzoeken | Aanwezig | Vraag en antwoord blijven bewaard en worden in het logboek opgenomen. |
-| Bestellogboek | Gedeeltelijk | Bestelling, status, informatieverzoeken, aankoop en leveringen worden geregistreerd; wijzigingen aan alle beheerobjecten worden nog niet allemaal gelogd. |
+| Bestellogboek | Aanwezig voor bestelproces | Indiening, status, leveranciersvoorstellen, informatievragen en antwoorden, aankoop en afzonderlijke leveringen worden chronologisch geregistreerd. Beheerobjecten hebben geen afzonderlijk auditlog. |
 | Artikelenbibliotheek | Aanwezig | EAN-13-validatie en uniciteit, categorie, omschrijving, specificaties, eenheid, afbeelding en leverancierskoppelingen. |
 | Zoeken artikelen | Aanwezig | Zoeken op naam, EAN en categorie (categorie via zoekveld). |
 | Historische artikelgegevens | Aanwezig voor nieuwe bestellingen | EAN en afbeeldings-URL worden als snapshot op de bestelregel opgeslagen. Bestaande regels zijn waar mogelijk aangevuld vanuit de huidige artikelfiche. |
@@ -25,10 +25,10 @@ Laatste codecontrole: 21 november 2026. Dit document maakt onderscheid tussen co
 | KBO-verbinding | Configuratie geblokkeerd | Productiesecrets KBO_USERNAME en KBO_PASSWORD ontbreken nog; KBO-endpoint is ingesteld. |
 | Aankoopregister | Aanwezig | Leverancier, bestelbonnummer, besteldatum, status en opmerkingen; geen bedragen of facturen. |
 | Filters aankoopregister | Aanwezig | Status, leverancier, campus, team en datumperiode. |
-| Meerdere deelleveringen | Aanwezig in code | Afzonderlijke leveringsrecords met aantal, datum en opmerking; server controleert dat totaal niet boven bestelde hoeveelheid uitkomt. |
-| Afbeeldingen kiezen | Aanwezig in code | Zoekresultaten worden eerst als voorstellen getoond; gebruiker bevestigt expliciet de gekozen afbeelding. |
+| Meerdere deelleveringen | Aanwezig | Afzonderlijke leveringsrecords met aantal, datum en opmerking; server controleert dat totaal niet boven bestelde hoeveelheid uitkomt. |
+| Afbeeldingen kiezen | Aanwezig | Zoekresultaten worden eerst als voorstellen getoond; gebruiker bevestigt expliciet de gekozen afbeelding. |
 | Afbeeldingenopslag | Gedeeltelijk getest | R2-binding is geconfigureerd; volledige productiepraktijktest met echte afbeeldingen moet nog gebeuren. |
-| Centrale instellingen | Gedeeltelijk | Campussen, categorieën en herbestelvoorkeur worden in D1 bewaard. Dynamische campuswaarden zijn nog beperkt door vaste campusvalidatie in de API en teamschema. |
+| Centrale instellingen | Aanwezig | Campussen, categorieën en herbestelvoorkeur worden in D1 bewaard; aangepaste campussen worden ondersteund via custom_campus zonder de bestaande teamsleutel te breken. Verwijderen van gebruikte campussen wordt geblokkeerd. |
 | Centrale Google-/Microsoft-/Smartschool-aanmelding | Niet afzonderlijk in de applicatie | De functionele blauwdruk gebruikt Cloudflare Access als identiteitslaag. De gewenste gemeenschappelijke login hangt af van de Identity Provider-configuratie in Cloudflare Access. |
 
 ## Productieomgeving
@@ -62,6 +62,8 @@ Migratie 006 voegt leveringshistoriek en historische EAN-/afbeeldingssnapshots t
 - Een aanvrager kan alleen de eigen aanvraag annuleren en alleen in de toegestane vroege statussen.
 - Artikel-EAN en afbeelding worden bij indiening als historische bestelregelsnapshot bewaard.
 - Meerdere deelleveringen kunnen met afzonderlijke aantallen en datums worden ingevoerd.
+- Teamleden kunnen ook de aankoop- en leveringshistoriek van hun eigen team lezen.
+- Zelf ingestelde campussen werken door in teams, gebruikers, bestellingen en aankopersrechten.
 - Het totaal van geregistreerde leveringen kan server-side de bestelde hoeveelheid niet overschrijden.
 - Afbeeldingen worden eerst als voorstellen getoond en pas na expliciete keuze opgeslagen.
 - Aankoopregister bevat filters voor campus en team.
