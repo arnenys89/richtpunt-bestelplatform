@@ -288,7 +288,7 @@ async function api(req,env,user,url){
  }
  if(path==="/api/purchases"&&method==="POST"){
   requireRole(user,"buyer","admin");const b=await bodyJson(req);
-  if(!b.orderItemId||!clean(b.supplier,180)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(b.date)||!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Controleer bestelregel, leverancier, datum en status."},400);
+  if(!b.orderItemId||!clean(b.supplier,180)||!/^\\d{4}-\\d{2}-\\d{2}$/.test(b.date)||b.status!=="besteld")return json({error:"Een nieuwe aankoop start met status besteld. Registreer leveringen afzonderlijk."},400);
   const item=await env.DB.prepare("SELECT oi.id,oi.order_id,o.campus,o.team_id,o.status order_status,oi.catalog_item_id,ci.category FROM order_items oi JOIN orders o ON o.id=oi.order_id LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE oi.id=?").bind(b.orderItemId).first();if(!item)return json({error:"Bestelregel niet gevonden."},404);if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=? OR campus='Beide campussen') AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR category=?)").bind(user.id,item.campus,item.team_id,item.category).first())requireRole(user,"admin");
   if(!["approved","ordered","partially_delivered"].includes(item.order_status))return json({error:"De bestelling moet eerst goedgekeurd zijn voordat een aankoop wordt geregistreerd."},409);
   let supplier=await env.DB.prepare("SELECT id FROM suppliers WHERE lower(name)=lower(?) LIMIT 1").bind(clean(b.supplier,180)).first();
