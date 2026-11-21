@@ -287,6 +287,21 @@ async function api(req,env,user,url){
   await syncOrderStatus(env,item.order_id);
   return json({id:pid},201);
  }
+ m=path.match(/^\/api\/purchases\/([^/]+)\/deliveries$/);
+ if(m&&method==="POST"){
+  requireRole(user,"buyer","admin");const b=await bodyJson(req);
+  const p=await env.DB.prepare("SELECT p.id,p.order_item_id,oi.order_id,oi.quantity ordered_quantity,o.campus,o.team_id,ci.category FROM purchases p JOIN order_items oi ON oi.id=p.order_item_id JOIN orders o ON o.id=oi.order_id LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE p.id=?").bind(m[1]).first();
+  if(!p)return json({error:"Aankoop niet gevonden."},404);
+  if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments ba WHERE ba.user_id=? AND (ba.campus IS NULL OR ba.campus=? OR ba.campus='Beide campussen') AND (ba.team_id IS NULL OR ba.team_id=?) AND (ba.category IS NULL OR ba.category=?)").bind(user.id,p.campus,p.team_id,p.category).first())requireRole(user,"admin");
+  const quantity=Number(b.quantity),date=String(b.date||"");
+  if(!Number.isFinite(quantity)||quantity<=0||!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Vul een geldig geleverd aantal en een leverdatum in."},400);
+  const total=await env.DB.prepare("SELECT COALESCE(SUM(quantity),0) total FROM purchase_deliveries WHERE purchase_id=?").bind(m[1]).first();
+  if(Number(total.total)+quantity>Number(p.ordered_quantity))return json({error:"Het totaal van de deelleveringen mag de bestelde hoeveelheid niet overschrijden."},409);
+  const deliveryId=crypto.randomUUID(),newTotal=Number(total.total)+quantity,status=newTotal>=Number(p.ordered_quantity)?"geleverd":"gedeeltelijk_geleverd";
+  await env.DB.batch([env.DB.prepare("INSERT INTO purchase_deliveries(id,purchase_id,quantity,delivered_on,note,created_by) VALUES(?,?,?,?,?,?)").bind(deliveryId,m[1],quantity,date,clean(b.note,1000)||null,user.id),env.DB.prepare("UPDATE purchases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(status,m[1]),env.DB.prepare("UPDATE order_items SET status=? WHERE id=?").bind(status,p.order_item_id),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'delivery_recorded',?)").bind(crypto.randomUUID(),p.order_id,p.order_item_id,user.id,quantity+" eenheden geleverd op "+date+(clean(b.note,1000)?": "+clean(b.note,1000):""))]);
+  await syncOrderStatus(env,p.order_id);
+  return json({id:deliveryId,status,totalDelivered:newTotal,orderedQuantity:p.ordered_quantity},201);
+ }
  m=path.match(/^\/api\/purchases\/([^/]+)$/);
  if(m&&method==="PATCH"){requireRole(user,"buyer","admin");const b=await bodyJson(req);if(!["besteld","gedeeltelijk_geleverd","geleverd","geannuleerd"].includes(b.status))return json({error:"Ongeldige aankoopstatus."},400);const p=await env.DB.prepare("SELECT p.id,p.order_item_id,oi.order_id,o.campus,o.team_id,ci.category FROM purchases p JOIN order_items oi ON oi.id=p.order_item_id JOIN orders o ON o.id=oi.order_id LEFT JOIN catalog_items ci ON ci.id=oi.catalog_item_id WHERE p.id=?").bind(m[1]).first();if(!p)return json({error:"Aankoop niet gevonden."},404);if(user.role==="buyer"&&!await env.DB.prepare("SELECT 1 FROM buyer_assignments WHERE user_id=? AND (campus IS NULL OR campus=? OR campus='Beide campussen') AND (team_id IS NULL OR team_id=?) AND (category IS NULL OR category=?)").bind(user.id,p.campus,p.team_id,p.category).first())requireRole(user,"admin");await env.DB.batch([env.DB.prepare("UPDATE purchases SET status=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(b.status,m[1]),env.DB.prepare("UPDATE order_items SET status=? WHERE id=?").bind(b.status,p.order_item_id),env.DB.prepare("INSERT INTO order_events(id,order_id,order_item_id,actor_id,event_type,message) VALUES(?,?,?,?,'delivery_status_changed',?)").bind(crypto.randomUUID(),p.order_id,p.order_item_id,user.id,"Leverstatus gewijzigd naar "+b.status)]);await syncOrderStatus(env,p.order_id);return json({ok:true})}
  if(path==="/api/users"&&method==="GET"){requireRole(user,"admin");const rows=await env.DB.prepare("SELECT id,email,display_name,role,campus,active FROM users ORDER BY display_name").all();return json({users:rows.results||[]})}
